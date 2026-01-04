@@ -11,6 +11,8 @@ services:
     dns:
       - 1.1.1.2
       - 1.0.0.2
+      - 2606:4700:4700::1112
+      - 2606:4700:4700::1002
     restart: unless-stopped
 
   pihole:
@@ -41,8 +43,11 @@ services:
     dns:
       - 1.1.1.2
       - 1.0.0.2
+      - 2606:4700:4700::1112
+      - 2606:4700:4700::1002
     restart: unless-stopped
 
 networks:
   dns_network:
     driver: bridge
+    enable_ipv6: true
