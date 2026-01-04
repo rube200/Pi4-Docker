@@ -8,6 +8,39 @@ services:
     privileged: true
     networks:
       - dns_network
+    dns:
+      - 1.1.1.2
+      - 1.0.0.2
+    restart: unless-stopped
+
+  pihole:
+    container_name: pihole
+    depends_on:
+      - unbound
+    image: pihole/pihole:latest
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "67:67/udp"
+      - "123:123/udp"
+      - "443:443/tcp"
+    environment:
+      TZ: 'Europe/Lisbon'
+      FTLCONF_dns_upstreams: 'unbound#5335'
+      FTLCONF_dns_listeningMode: 'ALL'
+    volumes:
+      - '/etc/pihole:/etc/pihole'
+    cap_add:
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+      - NET_RAW
+      - SYS_NICE
+      - SYS_TIME
+    networks:
+      - dns_network
+    dns:
+      - 1.1.1.2
+      - 1.0.0.2
     restart: unless-stopped
 
 networks:

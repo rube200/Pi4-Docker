@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
-    apt-get install -y bind9-dnsutils unbound unbound-anchor && \
+    apt-get install -y bind9-dnsutils unbound-anchor unbound && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
