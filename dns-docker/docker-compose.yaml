@@ -6,9 +6,6 @@ services:
       - "5335:5335/udp"
       - "5335:5335/tcp"
     privileged: true
-    sysctls:
-      - net.core.rmem_max=212992
-      - net.core.wmem_max=212992
     networks:
       - dns_network
     restart: unless-stopped
