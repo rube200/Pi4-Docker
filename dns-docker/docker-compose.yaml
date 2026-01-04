@@ -25,11 +25,21 @@ services:
       - "53:53/udp"
       - "67:67/udp"
       - "123:123/udp"
-      - "443:443/tcp"
+      - "44353:443/tcp"
     environment:
       TZ: 'Europe/Lisbon'
       FTLCONF_dns_upstreams: 'unbound#5335'
       FTLCONF_dns_listeningMode: 'ALL'
+      FTLCONF_dns_piholePTR: 'HOSTNAMEFQDN'
+      FTLCONF_dns_replyWhenBusy: 'BLOCK'
+      FTLCONF_dns_domainNeeded: true
+      FTLCONF_dns_expandHosts: true
+      FTLCONF_dns_dnssec: true
+      FTLCONF_dns_blocking_active: true
+      FTLCONF_dns_rateLimit_count: 1200
+      FTLCONF_ntp_sync_rtc_set: true
+      FTLCONF_webserver_port: +443s
+      FTLCONF_webserver_session_timeout: 2592000
     volumes:
       - '/etc/pihole:/etc/pihole'
     cap_add:
@@ -45,6 +55,12 @@ services:
       - 1.0.0.2
       - 2606:4700:4700::1112
       - 2606:4700:4700::1002
+    healthcheck:
+      test: ["CMD", "dig", "+ad", "+short", "dnssec.works", "@127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
 networks:
