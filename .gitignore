@@ -1,0 +1,6 @@
+# Environment files
+.env
+*.env
+# Explicitly allow .env.example files
+!.env.example
+!*.env.example

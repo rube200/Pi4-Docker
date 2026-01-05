@@ -71,7 +71,10 @@ services:
     ports:
       - "3000:3000/tcp"
     environment:
-      - DOH_UPSTREAM_DNS=pihole:53
+      - DOH_HOSTNAME=${DOH_HOSTNAME}
+      - DOH_UPSTREAM_DNS=${DOH_UPSTREAM_DNS:-pihole:53}
+      - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-query-dns}
+      - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-443}
     networks:
       - dns_network
     healthcheck:
