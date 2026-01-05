@@ -63,6 +63,25 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  doh:
+    build: ./doh-docker/
+    container_name: doh
+    depends_on:
+      - pihole
+    ports:
+      - "3000:3000/tcp"
+    environment:
+      - DOH_UPSTREAM_DNS=pihole:53
+    networks:
+      - dns_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/query-dns?dns=AAABAAABAAAAAAABAW5zMS1hLmRucwRuYW1lBGNvbQAAAQAB", "-o", "/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
 networks:
   dns_network:
     driver: bridge
