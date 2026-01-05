@@ -6,8 +6,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY docker-entrypoint.sh /usr/local/bin/
+COPY healthcheck.sh /usr/local/bin/
 
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/healthcheck.sh
 
 EXPOSE 3000
 

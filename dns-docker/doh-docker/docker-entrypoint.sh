@@ -40,18 +40,33 @@ if [ -f "$BINARY_PATH" ] && [ -x "$BINARY_PATH" ]; then
 fi
 
 #Check if binary is up to date or download latest version
-LATEST_VERSION=$(curl -sf https://api.github.com/repos/DNSCrypt/doh-server/releases/latest | jq -r '.tag_name' | sed 's/^v//' || echo "")
+GITHUB_API_RESPONSE=$(curl -sf https://api.github.com/repos/DNSCrypt/doh-server/releases/latest 2>&1)
+GITHUB_API_EXIT_CODE=$?
+if [ $GITHUB_API_EXIT_CODE -ne 0 ]; then
+    echo "Error: Failed to fetch latest version from GitHub API (exit code: $GITHUB_API_EXIT_CODE)"
+    echo "Error: Response: $GITHUB_API_RESPONSE"
+    LATEST_VERSION=""
+else
+    LATEST_VERSION=$(echo "$GITHUB_API_RESPONSE" | jq -r '.tag_name' | sed 's/^v//' 2>&1)
+    JQ_EXIT_CODE=$?
+    if [ $JQ_EXIT_CODE -ne 0 ] || [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+        LATEST_VERSION=""
+    fi
+fi
+
 if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
-    echo "Downloading doh-proxy version $LATEST_VERSION..."
-    curl -sfL -o /tmp/doh-proxy.tar.bz2 "https://github.com/DNSCrypt/doh-server/releases/download/${LATEST_VERSION}/doh-proxy_${LATEST_VERSION}_linux-${ARCH_SUFFIX}.tar.bz2"
-    if [ $? -eq 0 ] && [ -f /tmp/doh-proxy.tar.bz2 ]; then
+    DOWNLOAD_URL="https://github.com/DNSCrypt/doh-server/releases/download/${LATEST_VERSION}/doh-proxy_${LATEST_VERSION}_linux-${ARCH_SUFFIX}.tar.bz2"
+    DOWNLOAD_OUTPUT=$(curl -fL -o /tmp/doh-proxy.tar.bz2 "$DOWNLOAD_URL" 2>&1)
+    DOWNLOAD_EXIT_CODE=$?
+    if [ $DOWNLOAD_EXIT_CODE -eq 0 ]; then
         EXTRACT_DIR=$(mktemp -d)
         tar -xjf /tmp/doh-proxy.tar.bz2 -C "$EXTRACT_DIR" 2>/dev/null
-        mv "$EXTRACT_DIR"/doh-proxy/doh-proxy "$BINARY_PATH" 2>/dev/null
+        mv "$EXTRACT_DIR/doh-proxy/doh-proxy" "$BINARY_PATH" 2>/dev/null
         chmod +x "$BINARY_PATH"
         rm -rf "$EXTRACT_DIR" /tmp/doh-proxy.tar.bz2
     else
-        echo "Error: Failed to download binary"
+        echo "Error: Download failed (exit code: $DOWNLOAD_EXIT_CODE)"
+        echo "Error: Download output: $DOWNLOAD_OUTPUT"
     fi
 fi
 
@@ -64,26 +79,12 @@ DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-query-dns}"
 DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-443}"
 DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-pihole:53}"
 
-echo "Starting doh-server (IPv4 and IPv6)..."
-"$BINARY_PATH" \
-    -O \
-    -H "$DOH_HOSTNAME" \
-    -l "0.0.0.0:3000" \
-    -p "$DOH_PATH_PREFIX" \
-    -u "$DOH_UPSTREAM_DNS" \
-    -j "$DOH_PUBLIC_PORT" \
-    --enable-ecs &
-PID_IPV4=$!
-
-"$BINARY_PATH" \
+echo "Starting doh-server..."
+exec "$BINARY_PATH" \
     -O \
     -H "$DOH_HOSTNAME" \
     -l "[::]:3000" \
     -p "$DOH_PATH_PREFIX" \
     -u "$DOH_UPSTREAM_DNS" \
     -j "$DOH_PUBLIC_PORT" \
-    --enable-ecs &
-PID_IPV6=$!
-
-trap "kill $PID_IPV4 $PID_IPV6 2>/dev/null; exit" TERM INT
-wait $PID_IPV4 $PID_IPV6
+    --enable-ecs

@@ -78,7 +78,7 @@ services:
     networks:
       - dns_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/query-dns?dns=AAABAAABAAAAAAABAW5zMS1hLmRucwRuYW1lBGNvbQAAAQAB", "-o", "/dev/null"]
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
