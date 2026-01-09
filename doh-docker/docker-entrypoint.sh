@@ -9,11 +9,7 @@ case "$ARCH" in
     *) echo "Error: Unsupported architecture: $ARCH" && exit 1 ;;
 esac
 
-#Retrieve and verify DOH_HOSTNAME
-if [ -z "$DOH_HOSTNAME" ]; then
-    [ -f "/etc/doh-server/hostname" ] && DOH_HOSTNAME=$(cat /etc/doh-server/hostname | tr -d '\n\r ')
-fi
-[ -z "$DOH_HOSTNAME" ] && echo "Error: DOH_HOSTNAME is not set and no config file found" && exit 1
+[ -z "$SERVER_HOSTNAME" ] && echo "Error: SERVER_HOSTNAME is not set and no config file found" && exit 1
 
 #Wait for DNS to be ready (to resolve github.com for API calls)
 echo "Waiting for DNS to be ready..."
@@ -82,7 +78,7 @@ DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-pihole:53}"
 echo "Starting doh-server..."
 exec "$BINARY_PATH" \
     -O \
-    -H "$DOH_HOSTNAME" \
+    -H "$SERVER_HOSTNAME" \
     -l "[::]:3000" \
     -p "$DOH_PATH_PREFIX" \
     -u "$DOH_UPSTREAM_DNS" \

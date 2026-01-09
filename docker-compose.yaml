@@ -7,18 +7,20 @@ services:
       - "5335:5335/tcp"
     privileged: true
     networks:
-      - dns_network
-    dns:
-      - 1.1.1.2
-      - 1.0.0.2
-      - 2606:4700:4700::1112
-      - 2606:4700:4700::1002
+      - services_network
+    healthcheck:
+      test: ["CMD", "dig", "+ad", "+short", "dnssec.works", "@127.0.0.1", "-p", "5335"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   pihole:
     container_name: pihole
     depends_on:
-      - unbound
+      unbound:
+        condition: service_healthy
     image: pihole/pihole:latest
     ports:
       - "53:53/tcp"
@@ -38,6 +40,7 @@ services:
       FTLCONF_dns_blocking_active: true
       FTLCONF_dns_rateLimit_count: 1200
       FTLCONF_ntp_sync_rtc_set: true
+      FTLCONF_webserver_domain: ${SERVER_HOSTNAME}
       FTLCONF_webserver_port: +44353s
       FTLCONF_webserver_session_timeout: 2592000
     volumes:
@@ -49,12 +52,7 @@ services:
       - SYS_NICE
       - SYS_TIME
     networks:
-      - dns_network
-    dns:
-      - 1.1.1.2
-      - 1.0.0.2
-      - 2606:4700:4700::1112
-      - 2606:4700:4700::1002
+      - services_network
     healthcheck:
       test: ["CMD", "dig", "+ad", "+short", "dnssec.works", "@127.0.0.1"]
       interval: 30s
@@ -71,12 +69,12 @@ services:
     ports:
       - "3000:3000/tcp"
     environment:
-      - DOH_HOSTNAME=${DOH_HOSTNAME}
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - DOH_UPSTREAM_DNS=${DOH_UPSTREAM_DNS:-pihole:53}
       - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-query-dns}
       - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-443}
     networks:
-      - dns_network
+      - services_network
     healthcheck:
       test: ["CMD", "/usr/local/bin/healthcheck.sh"]
       interval: 30s
@@ -85,7 +83,34 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  nginx:
+    build: ./nginx/
+    container_name: nginx
+    depends_on:
+      - doh
+      - pihole
+    environment:
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+      - "440:440/tcp"
+      - "853:853/tcp"
+    volumes:
+      - '/etc/letsencrypt:/etc/letsencrypt'
+      - '/var/www/certbot:/var/www/certbot'
+    networks:
+      - services_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
 networks:
-  dns_network:
+  services_network:
     driver: bridge
     enable_ipv6: true

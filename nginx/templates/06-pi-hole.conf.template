@@ -1,0 +1,19 @@
+server {
+    access_log /var/log/nginx/access_pi-hole.log;
+    error_log /var/log/nginx/error_pi-hole.log;
+
+    include /etc/nginx/common.d/common.conf;
+
+    server_name pi-hole.$SERVER_HOSTNAME;
+
+    add_header X-Pi-hole "The Pi-hole Web interface is working!";
+    location /admin {
+        proxy_pass https://pihole:44353/admin;
+        include /etc/nginx/common.d/proxy_params.conf;
+    }
+
+    location /api {
+        proxy_pass https://pihole:44353/api;
+        include /etc/nginx/common.d/proxy_params.conf;
+    }
+}

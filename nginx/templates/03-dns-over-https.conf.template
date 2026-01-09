@@ -1,0 +1,53 @@
+upstream doh-proxy {
+    zone doh-proxy 64k;
+
+    server doh:3000;
+    server [::1]:3000;
+}
+
+server {
+    listen 440 ssl;
+    listen [::]:440 ssl;
+
+    #Temporary disable http3 since nginx  default docker build does not support it
+    #listen 440 quic;
+    #listen [::]:440 quic;
+
+    server_name $SERVER_HOSTNAME;
+
+    ssl_protocols TLSv1.3;
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    include /etc/nginx/common.d/common-header.conf;
+
+    access_log off;
+    log_not_found off;
+
+    location ~* /consulta\-dns$ {
+        proxy_pass http://doh-proxy;
+        include /etc/nginx/common.d/proxy_params.conf;    
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 440 ssl default_server;
+    listen [::]:440 ssl default_server;
+
+    server_name _;
+
+    ssl_protocols TLSv1.3;
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    include /etc/nginx/common.d/common-header.conf;
+
+    access_log off;
+    log_not_found off;
+
+    return 308 https://$host$request_uri;
+}

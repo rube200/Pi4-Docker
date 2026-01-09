@@ -1,0 +1,10 @@
+server {
+    include /etc/nginx/common.d/common.conf;
+
+    server_name $SERVER_HOSTNAME;
+
+    location /.well-known/acme-challenge/ {
+        allow all;
+        root /var/www/certbot;
+    }
+}

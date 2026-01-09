@@ -1,0 +1,24 @@
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+
+    #Temporary disable http3 since nginx default docker build does not support it
+    #listen 443 quic default_server;
+    #listen [::]:443 quic default_server;
+
+    server_name _;
+
+    ssl_protocols TLSv1.3;
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    http2 on; 
+    add_header Alt-Svc 'h2=":443"';
+
+    include /etc/nginx/common.d/common-header.conf;
+
+    access_log off;
+    log_not_found off;
+
+    return 308 https://$SERVER_HOSTNAME$request_uri;
+}

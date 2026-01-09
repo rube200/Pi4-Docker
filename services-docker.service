@@ -1,5 +1,5 @@
 [Unit]
-Description=DNS Docker Compose (Pi-hole & Unbound)
+Description=Docker with Services (Unbound, PiHole, DoH, DoT, Nginx and Wireguard)
 Requires=docker.service
 After=docker.service
 RequiresMountsFor=/var/run/docker.sock
