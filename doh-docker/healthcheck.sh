@@ -1,5 +1,5 @@
 #!/bin/sh
-DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-query-dns}"
+DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-consulta-dns}"
 
 curl -f -s -m 3 \
   -H "Accept: application/dns-json" \

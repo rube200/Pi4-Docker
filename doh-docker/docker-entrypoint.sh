@@ -75,8 +75,8 @@ if [ ! -f "$BINARY_PATH" ]; then
     exit 1
 fi
 
-DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-query-dns}"
-DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-443}"
+DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-consulta-dns}"
+DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-400}"
 DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-pihole:53}"
 
 echo "Starting doh-server..."

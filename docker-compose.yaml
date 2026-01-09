@@ -25,7 +25,7 @@ services:
       - "53:53/udp"
       - "67:67/udp"
       - "123:123/udp"
-      - "44353:443/tcp"
+      - "44353:44353/tcp"
     environment:
       TZ: 'Europe/Lisbon'
       FTLCONF_dns_upstreams: 'unbound#5335'
@@ -38,7 +38,7 @@ services:
       FTLCONF_dns_blocking_active: true
       FTLCONF_dns_rateLimit_count: 1200
       FTLCONF_ntp_sync_rtc_set: true
-      FTLCONF_webserver_port: +443s
+      FTLCONF_webserver_port: +44353s
       FTLCONF_webserver_session_timeout: 2592000
     volumes:
       - '/etc/pihole:/etc/pihole'
