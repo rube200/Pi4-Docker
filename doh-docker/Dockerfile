@@ -1,9 +1,6 @@
-FROM debian:bookworm-slim
+FROM alpine:latest
 
-RUN apt-get update && \
-    apt-get install -y bzip2 curl jq tar && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache bzip2 curl jq tar
 
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY healthcheck.sh /usr/local/bin/

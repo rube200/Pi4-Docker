@@ -1,9 +1,6 @@
-FROM debian:bookworm-slim
+FROM alpine:latest
 
-RUN apt-get update && \
-    apt-get install -y bind9-dnsutils unbound-anchor unbound && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache bind-tools unbound
 
 RUN mkdir -p /var/lib/unbound && \
     chown -R unbound:unbound /var/lib/unbound /etc/unbound
