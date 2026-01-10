@@ -90,6 +90,7 @@ services:
       - doh
       - pihole
     environment:
+      - DNS_API=${DNS_API}
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
     ports:
       - "80:80/tcp"

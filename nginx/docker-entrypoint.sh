@@ -9,6 +9,18 @@ NGINX_SSL_DIR="/etc/nginx/ssl"
 
 echo "Checking Let's Encrypt certificates..."
 if [ -f "${LE_CERT_DIR}/fullchain.pem" ] && [ -f "${LE_CERT_DIR}/privkey.pem" ]; then
+    echo "Attempting certificate renewal..."
+    RENEWAL_OUTPUT=$(certbot renew --quiet 2>&1)
+    RENEWAL_EXIT_CODE=$?
+    
+    if [ $RENEWAL_EXIT_CODE -ne 0 ]; then
+        echo "Certificate renewal failed with exit code: ${RENEWAL_EXIT_CODE}"
+        [ -n "$RENEWAL_OUTPUT" ] && echo "Error output: ${RENEWAL_OUTPUT}"
+        echo "Continuing with existing certificates..."
+    else
+        echo "Certificate renewal successful"
+    fi
+    
     echo "Copying certificates to nginx ssl directory..."
     cp "${LE_CERT_DIR}/fullchain.pem" "${NGINX_SSL_DIR}/fullchain.pem"
     cp "${LE_CERT_DIR}/privkey.pem" "${NGINX_SSL_DIR}/privkey.pem"
