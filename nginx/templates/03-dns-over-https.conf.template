@@ -30,7 +30,7 @@ server {
     }
 
     location / {
-        return 308 https://$host$request_uri;
+        return 308 https://$host;
     }
 }
 

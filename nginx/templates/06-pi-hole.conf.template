@@ -6,6 +6,13 @@ server {
 
     server_name pi-hole.$SERVER_HOSTNAME;
 
+    location / {
+        if ($request_method = 'HEAD') {
+            return 200;
+        }
+        return 308 /admin;
+    }
+
     add_header X-Pi-hole "The Pi-hole Web interface is working!";
     location /admin {
         proxy_pass https://pihole:44353/admin;

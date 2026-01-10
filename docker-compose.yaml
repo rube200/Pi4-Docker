@@ -2,6 +2,7 @@ services:
   unbound:
     build: ./unbound-docker/
     container_name: unbound
+    hostname: 'Unbound-Docker'
     ports:
       - "5335:5335/udp"
       - "5335:5335/tcp"
@@ -22,6 +23,7 @@ services:
       unbound:
         condition: service_healthy
     image: pihole/pihole:latest
+    hostname: 'PiHole-Docker'
     ports:
       - "53:53/tcp"
       - "53:53/udp"
@@ -66,12 +68,13 @@ services:
     container_name: doh
     depends_on:
       - pihole
+    hostname: 'DoH-Docker'
     ports:
       - "3000:3000/tcp"
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - DOH_UPSTREAM_DNS=${DOH_UPSTREAM_DNS:-pihole:53}
-      - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-query-dns}
+      - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
       - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-443}
     networks:
       - services_network
@@ -89,15 +92,16 @@ services:
     depends_on:
       - doh
       - pihole
-    environment:
-      - DNS_API=${DNS_API}
-      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+    hostname: 'Nginx-Docker'
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
       - "443:443/udp"
       - "440:440/tcp"
       - "853:853/tcp"
+    environment:
+      - DNS_API=${DNS_API}
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
     volumes:
       - '/etc/letsencrypt:/etc/letsencrypt'
       - '/var/www/certbot:/var/www/certbot'

@@ -7,4 +7,13 @@ server {
         allow all;
         root /var/www/certbot;
     }
+
+    location / {
+        expires max;
+        try_files $uri $uri/ =404;
+
+        if ($request_method = 'HEAD') {
+            return 200;
+        }
+    }
 }

@@ -36,8 +36,10 @@ class ServiceChecker {
 			const url = getSubdomainUrl(service.path);
 			const response = await fetch(url, {
 				method: 'HEAD',
+				cache: 'no-cache',
+				mode: 'cors',
+				redirect: 'manual',
 				signal: controller.signal,
-				cache: 'no-cache'
 			});
 
 			clearTimeout(timeoutId);
@@ -65,7 +67,21 @@ class ServiceChecker {
 	}
 }
 
+function setPageTitle() {
+	const hostname = window.location.hostname;
+	const parts = hostname.split('.');
+	let baseDomain;
+	if (parts.length >= 2) {
+		baseDomain = parts.slice(-2).join('.');
+	} else {
+		baseDomain = hostname;
+	}
+	document.title = `${baseDomain} - Landing Page`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+	setPageTitle();
+
 	new ServiceChecker();
 
 	const homeAssistantImg = document.getElementById("redirectToHomeAssistant");
@@ -85,21 +101,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function getSubdomainUrl(subDomain) {
-	const domain = window.location.hostname;
-	return window.location.href.replace(window.location.hostname, `${subDomain}.${domain}`);
+	const hostname = window.location.hostname;
+	const parts = hostname.split('.');
+	
+	let baseDomain;
+	if (parts.length >= 2) {
+		baseDomain = parts.slice(-2).join('.');
+	} else {
+		baseDomain = hostname;
+	}
+	
+	const targetHostname = `${subDomain}.${baseDomain}`;
+	if (hostname === targetHostname) {
+		return window.location.href;
+	}
+	
+	return window.location.href.replace(hostname, targetHostname);
 }
 
-
 function redirectOnClick(element, subDomain) {
-	if (!(element instanceof HTMLElement)) {
-		return true;
+	if (!(element instanceof HTMLElement) || typeof subDomain !== 'string') {
+		return;
 	}
 
-	if (typeof subDomain !== 'string' && !(subDomain instanceof String)) {
-		return false;
-	}
-
-	const url = getSubdomainUrl(subDomain)
-	element.addEventListener("click", () => window.location.href=url);
-	return true;
+	const url = getSubdomainUrl(subDomain);
+	element.addEventListener("click", (e) => {
+		const targetElement = element.id?.startsWith('redirectTo')
+			? document.getElementById(element.id.replace('redirectTo', '').replace(/^./, c => c.toLowerCase()) + 'Btn')
+			: element;
+		
+		if (targetElement?.classList.contains('disabled')) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
+		}
+		
+		window.location.href = url;
+	});
 }
