@@ -20,6 +20,6 @@ RUN mkdir -p /etc/nginx/ssl /var/www/certbot /docker-entrypoint.d
 COPY docker-entrypoint.sh /docker-entrypoint.d/10-cert-renewal.sh
 RUN chmod +x /docker-entrypoint.d/10-cert-renewal.sh
 
-EXPOSE 80 443
+EXPOSE 80 440 443 853
 
 CMD ["nginx", "-g", "daemon off;"]
