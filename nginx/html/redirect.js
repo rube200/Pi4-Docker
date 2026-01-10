@@ -33,7 +33,7 @@ class ServiceChecker {
 		const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
 		try {
-			const url = getSubdomainUrl(subDomain)
+			const url = getSubdomainUrl(service.path);
 			const response = await fetch(url, {
 				method: 'HEAD',
 				signal: controller.signal,
@@ -69,13 +69,19 @@ document.addEventListener('DOMContentLoaded', () => {
 	new ServiceChecker();
 
 	const homeAssistantImg = document.getElementById("redirectToHomeAssistant");
+	const homeAssistantBtn = document.getElementById("homeAssistantBtn");
 	redirectOnClick(homeAssistantImg, "home-assistant");
+	redirectOnClick(homeAssistantBtn, "home-assistant");
 
 	const kodiImg = document.getElementById("redirectToKodi");
+	const kodiBtn = document.getElementById("kodiBtn");
 	redirectOnClick(kodiImg, "kodi");
+	redirectOnClick(kodiBtn, "kodi");
 
 	const piHoleImg = document.getElementById("redirectToPiHole");
+	const piHoleBtn = document.getElementById("piHoleBtn");
 	redirectOnClick(piHoleImg, "pi-hole");
+	redirectOnClick(piHoleBtn, "pi-hole");
 });
 
 function getSubdomainUrl(subDomain) {
