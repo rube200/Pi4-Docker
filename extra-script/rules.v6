@@ -1,0 +1,137 @@
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:PROTECTION_DDOS [0:0]
+:PROTECTION_DNS [0:0]
+:PROTECTION_WIREGUARD [0:0]
+:DNS_LEAK [0:0]
+
+###
+### LOG AND DROP
+###
+
+#ATTACK LOG AND DROP
+-A ATTACK -m limit --limit 2/min -j LOG --log-level 4 --log-prefix "[ATTACK] "
+-A ATTACK -j DROP
+
+#PROTECTION
+-A PROTECTION_DDOS -m limit --limit 5/sec -j ACCEPT
+-A PROTECTION_DDOS -j LOG --log-level 4 --log-prefix "[DDOS] "
+-A PROTECTION_DDOS -j DROP
+
+-A PROTECTION_DNS -m limit --limit 300/min -j ACCEPT
+-A PROTECTION_DNS -j LOG --log-level 4 --log-prefix "[DNS] "
+-A PROTECTION_DNS -j DROP
+
+-A PROTECTION_WIREGUARD -m limit --limit 12/min -j ACCEPT
+-A PROTECTION_WIREGUARD -j LOG --log-level 4 --log-prefix "[WIREGUARD] "
+-A PROTECTION_WIREGUARD -j DROP
+
+-A DNS_LEAK -j LOG --log-level 4 --log-prefix "[DNS LEAK] "
+-A DNS_LEAK -j DROP
+
+###
+### INPUT
+###
+
+#DROP INVALID PACKETS
+-A INPUT -m state --state INVALID -j DROP
+
+#ALLOW RELATED TRAFFIC
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+#BROADCAST
+-A INPUT -p udp --sport 546 --dport 547 -j ACCEPT
+
+#ALLOW LOCAL NETWORK AND MULTICAST
+-A INPUT -s ::1/128 -j ACCEPT
+
+#ALLOW DOCKER INTERNAL COMMUNICATION
+-A INPUT -i docker0 -j ACCEPT
+-A INPUT -i br-+ -j ACCEPT
+
+#ALLOW LOCAL SSH
+-A INPUT -s fd13:13:13::/30 -p tcp --dport 22 -j ACCEPT
+-A INPUT -s fe80::/10 -p tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp --dport 22 -j DROP
+
+#ALLOW HTTP/HTTPS WITH RATE LIMIT
+-A INPUT -s fd13:13:13::/64 -p tcp --dport 80 -j ACCEPT
+-A INPUT -s fe80::/10 -p tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp --dport 80 -j PROTECTION_DDOS
+
+-A INPUT -s fd13:13:13::/64 -p tcp --dport 443 -j ACCEPT
+-A INPUT -s fe80::/10 -p tcp --dport 443 -j ACCEPT
+-A INPUT -p tcp --dport 443 -j PROTECTION_DDOS
+
+-A INPUT -s fd13:13:13::/64 -p udp --dport 443 -j ACCEPT
+-A INPUT -s fe80::/10 -p udp --dport 443 -j ACCEPT
+-A INPUT -p udp --dport 443 -j PROTECTION_DDOS
+
+#ALLOW DNS (Pi-hole) WITH RATE LIMIT
+-A INPUT -s fd13:13:13::/64 -p tcp --dport 53 -j ACCEPT
+-A INPUT -s fe80::/10 -p tcp --dport 53 -j ACCEPT
+-A INPUT -p tcp --dport 53 -j PROTECTION_DNS
+
+-A INPUT -s fd13:13:13::/64 -p udp --dport 53 -j ACCEPT
+-A INPUT -s fe80::/10 -p udp --dport 53 -j ACCEPT
+-A INPUT -p udp --dport 53 -j PROTECTION_DNS
+
+#ALLOW DNS OVER HTTPS (DoH via nginx)
+-A INPUT -s fd13:13:13::/64 -p tcp --dport 440 -j ACCEPT
+-A INPUT -s fe80::/10 -p tcp --dport 440 -j ACCEPT
+-A INPUT -p tcp --dport 440 -j PROTECTION_DNS
+
+#ALLOW DNS OVER TLS (DoT via nginx)
+-A INPUT -s fd13:13:13::/64 -p tcp --dport 853 -j ACCEPT
+-A INPUT -s fe80::/10 -p tcp --dport 853 -j ACCEPT
+-A INPUT -p tcp --dport 853 -j PROTECTION_DNS
+
+#ALLOW WIREGUARD WITH RATE LIMIT
+-A INPUT -p udp --dport 182 -j PROTECTION_WIREGUARD
+-A INPUT -p udp --dport 51820 -j PROTECTION_WIREGUARD
+
+#LOG REMAINING TRAFFIC AND DROP
+-A INPUT -j NFLOG --nflog-prefix="[FIREWALL-IN] "
+-P INPUT DROP
+
+###
+### OUTPUT
+###
+
+#ALLOW LOCAL NETWORK AND MULTICAST
+-A OUTPUT -d ::1/128 -j ACCEPT
+
+#BLOCK NON LOCAL SSH
+-A OUTPUT -d fd13:13:13::/64 -p tcp --sport 22 -j ACCEPT
+-A OUTPUT -d fe80::/10 -p tcp --sport 22 -j ACCEPT
+-A OUTPUT -p tcp --sport 22 -j DROP
+
+#BLOCK NON LOCAL DNS (Pi-hole)
+-A OUTPUT -d fd13:13:13::/64 -p tcp --sport 53 -j ACCEPT
+-A OUTPUT -d fe80::/10 -p tcp --sport 53 -j ACCEPT
+-A OUTPUT -p tcp --sport 53 -j DROP
+
+-A OUTPUT -d fd13:13:13::/64 -p udp --sport 53 -j ACCEPT
+-A OUTPUT -d fe80::/10 -p udp --sport 53 -j ACCEPT
+-A OUTPUT -p udp --sport 53 -j DROP
+
+#BLOCK NON LOCAL DNS (Unbound)
+-A OUTPUT -d fd13:13:13::/64 -p tcp --sport 5335 -j ACCEPT
+-A OUTPUT -d fe80::/10 -p tcp --sport 5335 -j ACCEPT
+-A OUTPUT -p tcp --sport 5335 -j DROP
+
+-A OUTPUT -d fd13:13:13::/64 -p udp --sport 5335 -j ACCEPT
+-A OUTPUT -d fe80::/10 -p udp --sport 5335 -j ACCEPT
+-A OUTPUT -p udp --sport 5335 -j DROP
+COMMIT
+
+*nat
+:PREROUTING ACCEPT [0:0]
+-A PREROUTING -p udp --dport 182 -j REDIRECT --to-ports 51820
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+-A POSTROUTING -o eth0 -j MASQUERADE
+COMMIT
