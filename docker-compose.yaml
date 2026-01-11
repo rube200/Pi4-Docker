@@ -28,7 +28,6 @@ services:
       - "53:53/tcp"
       - "53:53/udp"
       - "67:67/udp"
-      - "123:123/udp"
       - "44353:44353/tcp"
     environment:
       TZ: 'Europe/Lisbon'
@@ -41,7 +40,6 @@ services:
       FTLCONF_dns_dnssec: true
       FTLCONF_dns_blocking_active: true
       FTLCONF_dns_rateLimit_count: 1200
-      FTLCONF_ntp_sync_rtc_set: true
       FTLCONF_webserver_domain: ${SERVER_HOSTNAME}
       FTLCONF_webserver_port: +44353s
       FTLCONF_webserver_session_timeout: 2592000
@@ -52,7 +50,6 @@ services:
       - NET_BIND_SERVICE
       - NET_RAW
       - SYS_NICE
-      - SYS_TIME
     networks:
       - services_network
     healthcheck:
@@ -115,7 +112,40 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  wireguard:
+    build: ./wireguard-docker/
+    container_name: wireguard
+    depends_on:
+      - pihole
+    hostname: 'Wireguard-Docker'
+    ports:
+      - "51820:51820/udp"
+    environment:
+      - WIREGUARD_CONFIG=${WIREGUARD_CONFIG:-wg0.conf}
+      - WIREGUARD_INTERFACE=${WIREGUARD_INTERFACE:-wg0}
+    volumes:
+      - '/etc/wireguard:/etc/wireguard'
+      - '/lib/modules:/lib/modules:ro'
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    networks:
+      - services_network
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+    restart: unless-stopped
+
 networks:
   services_network:
     driver: bridge
     enable_ipv6: true
+    driver_opts:
+      com.docker.network.driver.mtu: ${NETWORK_MTU:-1500}

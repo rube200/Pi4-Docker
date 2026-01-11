@@ -1,0 +1,8 @@
+[Interface]
+PrivateKey = PRIVATE_KEY_PLACEHOLDER
+Address = 10.13.13.1/24, fd13:13:13::1/64
+DNS = pihole
+ListenPort = 51820
+MTU = 1500
+PostUp = iptables -w -t nat -A POSTROUTING -o eth0 -j MASQUERADE; ip6tables -w -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -w -t nat -D POSTROUTING -o eth0 -j MASQUERADE; ip6tables -w -t nat -D POSTROUTING -o eth0 -j MASQUERADE
