@@ -64,6 +64,9 @@ services:
     build: ./doh-docker/
     container_name: doh
     depends_on:
+      pihole:
+        condition: service_healthy
+    dns:
       - pihole
     hostname: 'DoH-Docker'
     ports:
@@ -87,7 +90,11 @@ services:
     build: ./nginx/
     container_name: nginx
     depends_on:
-      - doh
+      doh:
+        condition: service_healthy
+      pihole:
+        condition: service_healthy
+    dns:
       - pihole
     hostname: 'Nginx-Docker'
     ports:
@@ -116,6 +123,9 @@ services:
     build: ./wireguard-docker/
     container_name: wireguard
     depends_on:
+      pihole:
+        condition: service_healthy
+    dns:
       - pihole
     hostname: 'Wireguard-Docker'
     ports:
@@ -123,6 +133,7 @@ services:
     environment:
       - WIREGUARD_CONFIG=${WIREGUARD_CONFIG:-wg0.conf}
       - WIREGUARD_INTERFACE=${WIREGUARD_INTERFACE:-wg0}
+      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
     volumes:
       - '/etc/wireguard:/etc/wireguard'
       - '/lib/modules:/lib/modules:ro'

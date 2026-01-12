@@ -8,13 +8,27 @@ WIREGUARD_CONFIG="${WIREGUARD_CONFIG:-wg0.conf}"
 SERVER_CONFIG="/etc/wireguard/${WIREGUARD_CONFIG}"
 SERVER_HOSTNAME="${SERVER_HOSTNAME:-}"
 SERVER_PORT="${WIREGUARD_PORT:-51820}"
+WIREGUARD_CONTAINER="${WIREGUARD_CONTAINER:-wireguard}"
 
 if [ ! -r "$SERVER_CONFIG" ]; then
     echo "Error: Server config $SERVER_CONFIG not found"
     exit 1
 fi
 
-SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | wg pubkey)
+if command -v wg >/dev/null 2>&1; then
+    WG_CMD="wg"
+elif docker ps --format '{{.Names}}' | grep -q "^${WIREGUARD_CONTAINER}$"; then
+    WG_CMD="docker exec ${WIREGUARD_CONTAINER} wg"
+else
+    echo "Error: 'wg' command not available and WireGuard container '${WIREGUARD_CONTAINER}' not running"
+    exit 1
+fi
+
+if [ "$WG_CMD" = "wg" ]; then
+    SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | wg pubkey)
+else
+    SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | docker exec -i "${WIREGUARD_CONTAINER}" wg pubkey)
+fi
 if [ -z "$SERVER_PUBLIC_KEY" ]; then
     echo "Error: Could not extract server public key from $SERVER_CONFIG"
     exit 1
@@ -79,7 +93,11 @@ echo
 echo "Using client IP: ${SUBNET}.${count}"
 client_ip="${SUBNET}.${count}"
 if [ -n "$SERVER_ADDRESS6" ]; then
-    client_ip6="${SUBNET6}::${count}"
+    if [ "${SUBNET6%::}" != "$SUBNET6" ]; then
+        client_ip6="${SUBNET6}${count}"
+    else
+        client_ip6="${SUBNET6}::${count}"
+    fi
 else
     client_ip6=""
 fi
@@ -117,9 +135,13 @@ case "$type" in
         ;;
 esac
 
-PRIVATE_KEY=$(wg genkey)
-PUBLIC_KEY=$(echo "$PRIVATE_KEY" | wg pubkey)
-PRESHARED_KEY=$(wg genpsk)
+PRIVATE_KEY=$($WG_CMD genkey)
+if [ "$WG_CMD" = "wg" ]; then
+    PUBLIC_KEY=$(echo "$PRIVATE_KEY" | wg pubkey)
+else
+    PUBLIC_KEY=$(echo "$PRIVATE_KEY" | docker exec -i "${WIREGUARD_CONTAINER}" wg pubkey)
+fi
+PRESHARED_KEY=$($WG_CMD genpsk)
 
 echo "" >> "$SERVER_CONFIG"
 echo "# ${client}" >> "$SERVER_CONFIG"
@@ -133,31 +155,26 @@ echo "PresharedKey = ${PRESHARED_KEY}" >> "$SERVER_CONFIG"
 echo "PublicKey = ${PUBLIC_KEY}" >> "$SERVER_CONFIG"
 
 echo "[Interface]" > "${client}.conf"
-echo "Address = ${client_ip}/32" >> "${client}.conf"
 if [ -n "$client_ip6" ]; then
-    echo "Address = ${client_ip6}/128" >> "${client}.conf"
+    echo "Address = ${client_ip}/32, ${client_ip6}/128" >> "${client}.conf"
+else
+    echo "Address = ${client_ip}/32" >> "${client}.conf"
 fi
-echo "DNS = pihole" >> "${client}.conf"
+if [ -n "$SERVER_ADDRESS6" ]; then
+    echo "DNS = ${SERVER_ADDRESS}, ${SERVER_ADDRESS6}" >> "${client}.conf"
+else
+    echo "DNS = ${SERVER_ADDRESS}" >> "${client}.conf"
+fi
 echo "PrivateKey = ${PRIVATE_KEY}" >> "${client}.conf"
 echo "" >> "${client}.conf"
 echo "[Peer]" >> "${client}.conf"
 echo "AllowedIPs = ${AllowedIPs}" >> "${client}.conf"
-if [ -n "$SERVER_HOSTNAME" ]; then
-    echo "Endpoint = ${SERVER_HOSTNAME}:${SERVER_PORT}" >> "${client}.conf"
-else
-    echo "Endpoint = SERVER_IP_OR_HOSTNAME:${SERVER_PORT}" >> "${client}.conf"
-fi
+echo "Endpoint = SERVER_IP_OR_HOSTNAME:${SERVER_PORT}" >> "${client}.conf"
 echo "PersistentKeepalive = 25" >> "${client}.conf"
 echo "PresharedKey = ${PRESHARED_KEY}" >> "${client}.conf"
 echo "PublicKey = ${SERVER_PUBLIC_KEY}" >> "${client}.conf"
 
 chmod 600 "${client}.conf"
-
-if [ -w "/etc/pihole/custom.list" ]; then
-    echo "" >> /etc/pihole/custom.list
-    echo "# Auto by VPN" >> /etc/pihole/custom.list
-    echo "${client_ip} ${client}-Vpn" >> /etc/pihole/custom.list
-fi
 
 echo
 echo "Client config created: ${client}.conf"
@@ -169,8 +186,12 @@ fi
 
 WIREGUARD_INTERFACE="${WIREGUARD_INTERFACE:-wg0}"
 echo "Reloading WireGuard configuration..."
-if command -v wg >/dev/null 2>&1; then
-    wg syncconf "$WIREGUARD_INTERFACE" "$SERVER_CONFIG" 2>/dev/null || echo "Note: Run 'wg-quick down $WIREGUARD_INTERFACE && wg-quick up $WIREGUARD_INTERFACE' to apply changes"
+if $WG_CMD syncconf "$WIREGUARD_INTERFACE" "$SERVER_CONFIG" 2>/dev/null; then
+    echo "Configuration reloaded successfully"
 else
-    echo "Note: Restart WireGuard container to apply changes"
+    if [ "$WG_CMD" != "wg" ]; then
+        echo "Note: Run 'docker exec ${WIREGUARD_CONTAINER} wg-quick down $WIREGUARD_INTERFACE && docker exec ${WIREGUARD_CONTAINER} wg-quick up $WIREGUARD_INTERFACE' to apply changes"
+    else
+        echo "Note: Run 'wg-quick down $WIREGUARD_INTERFACE && wg-quick up $WIREGUARD_INTERFACE' to apply changes"
+    fi
 fi

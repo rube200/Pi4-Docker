@@ -24,9 +24,16 @@ if [ ! -r "$CONFIG_FILE" ]; then
     fi
 fi
 
-if [ ! -r "$CREATE_CLIENT_SCRIPT" ] && [ -r "$DEFAULT_CREATE_CLIENT_SCRIPT" ]; then
-    echo "Copying create-client.sh to volume..."
-    cp "$DEFAULT_CREATE_CLIENT_SCRIPT" "$CREATE_CLIENT_SCRIPT"
+if [ -r "$DEFAULT_CREATE_CLIENT_SCRIPT" ]; then
+    if [ ! -r "$CREATE_CLIENT_SCRIPT" ]; then
+        echo "Copying create-client.sh to volume..."
+        cp "$DEFAULT_CREATE_CLIENT_SCRIPT" "$CREATE_CLIENT_SCRIPT"
+    fi
+
+    if grep -q "SERVER_IP_OR_HOSTNAME" "$CREATE_CLIENT_SCRIPT" 2>/dev/null; then
+        echo "Replacing SERVER_IP_OR_HOSTNAME with ${SERVER_HOSTNAME}..."
+        sed -i "s|SERVER_IP_OR_HOSTNAME|${SERVER_HOSTNAME}|g" "$CREATE_CLIENT_SCRIPT"
+    fi
     chmod +x "$CREATE_CLIENT_SCRIPT"
 fi
 
@@ -49,6 +56,26 @@ fi
 
 cleanup() {
     echo "Shutting down WireGuard..."
+    PIHOLE_IP=$(getent hosts pihole 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+    if [ -z "$PIHOLE_IP" ]; then
+        PIHOLE_IP=$(getent ahosts pihole 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+    fi
+    PIHOLE_IP6=$(getent ahostsv6 pihole 2>/dev/null | awk '{print $1}' | grep -v '^::' | grep -E '^[0-9a-fA-F:]+$' | head -1)
+    
+    if [ -n "$INTERFACE" ]; then
+        if [ -n "$PIHOLE_IP" ]; then
+            iptables -t nat -D PREROUTING -i "$INTERFACE" -p udp --dport 53 -j DNAT --to-destination "$PIHOLE_IP:53" 2>/dev/null || true
+            iptables -t nat -D PREROUTING -i "$INTERFACE" -p tcp --dport 53 -j DNAT --to-destination "$PIHOLE_IP:53" 2>/dev/null || true
+            iptables -D FORWARD -i "$INTERFACE" -d "$PIHOLE_IP" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+            iptables -D FORWARD -i "$INTERFACE" -d "$PIHOLE_IP" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+        fi
+        if [ -n "$PIHOLE_IP6" ]; then
+            ip6tables -t nat -D PREROUTING -i "$INTERFACE" -p udp --dport 53 -j DNAT --to-destination "[$PIHOLE_IP6]:53" 2>/dev/null || true
+            ip6tables -t nat -D PREROUTING -i "$INTERFACE" -p tcp --dport 53 -j DNAT --to-destination "[$PIHOLE_IP6]:53" 2>/dev/null || true
+            ip6tables -D FORWARD -i "$INTERFACE" -d "$PIHOLE_IP6" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+            ip6tables -D FORWARD -i "$INTERFACE" -d "$PIHOLE_IP6" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+        fi
+    fi
     wg-quick down "$INTERFACE" 2>/dev/null || true
     exit 0
 }
@@ -71,6 +98,34 @@ echo "Starting WireGuard interface $INTERFACE from $CONFIG_FILE..."
 if ! wg-quick up "$WG_CMD"; then
     echo "Error: Failed to start WireGuard interface"
     exit 1
+fi
+
+PIHOLE_IP=$(getent hosts pihole 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+if [ -z "$PIHOLE_IP" ]; then
+    PIHOLE_IP=$(getent ahosts pihole 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+fi
+
+PIHOLE_IP6=$(getent ahostsv6 pihole 2>/dev/null | awk '{print $1}' | grep -v '^::' | grep -E '^[0-9a-fA-F:]+$' | head -1)
+
+if [ -n "$PIHOLE_IP" ] || [ -n "$PIHOLE_IP6" ]; then
+    if [ -n "$PIHOLE_IP" ]; then
+        echo "Setting up IPv4 DNS forwarding to pihole at $PIHOLE_IP..."
+        iptables -t nat -A PREROUTING -i "$INTERFACE" -p udp --dport 53 -j DNAT --to-destination "$PIHOLE_IP:53" 2>/dev/null || true
+        iptables -t nat -A PREROUTING -i "$INTERFACE" -p tcp --dport 53 -j DNAT --to-destination "$PIHOLE_IP:53" 2>/dev/null || true
+        iptables -A FORWARD -i "$INTERFACE" -d "$PIHOLE_IP" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+        iptables -A FORWARD -i "$INTERFACE" -d "$PIHOLE_IP" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+    fi
+
+    if [ -n "$PIHOLE_IP6" ]; then
+        echo "Setting up IPv6 DNS forwarding to pihole at $PIHOLE_IP6..."
+        ip6tables -t nat -A PREROUTING -i "$INTERFACE" -p udp --dport 53 -j DNAT --to-destination "[$PIHOLE_IP6]:53" 2>/dev/null || true
+        ip6tables -t nat -A PREROUTING -i "$INTERFACE" -p tcp --dport 53 -j DNAT --to-destination "[$PIHOLE_IP6]:53" 2>/dev/null || true
+        ip6tables -A FORWARD -i "$INTERFACE" -d "$PIHOLE_IP6" -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+        ip6tables -A FORWARD -i "$INTERFACE" -d "$PIHOLE_IP6" -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+    fi
+    echo "DNS forwarding configured"
+else
+    echo "Warning: Could not resolve pihole hostname, DNS forwarding not configured"
 fi
 
 echo "WireGuard is running"
