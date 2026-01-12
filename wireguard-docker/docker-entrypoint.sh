@@ -4,6 +4,8 @@ set -e
 CONFIG_FILE="/etc/wireguard/${WIREGUARD_CONFIG}"
 TEMPLATE_FILE="/etc/wireguard/${WIREGUARD_CONFIG}.template"
 DEFAULT_TEMPLATE="/usr/local/share/wireguard/wg0.conf.template"
+CREATE_CLIENT_SCRIPT="/etc/wireguard/create-client.sh"
+DEFAULT_CREATE_CLIENT_SCRIPT="/usr/local/bin/create-client.sh"
 
 if [ ! -r "$CONFIG_FILE" ]; then
     if [ ! -r "$TEMPLATE_FILE" ] && [ -r "$DEFAULT_TEMPLATE" ]; then
@@ -20,6 +22,12 @@ if [ ! -r "$CONFIG_FILE" ]; then
         echo "Error: $CONFIG_FILE not found and no template available"
         exit 1
     fi
+fi
+
+if [ ! -r "$CREATE_CLIENT_SCRIPT" ] && [ -r "$DEFAULT_CREATE_CLIENT_SCRIPT" ]; then
+    echo "Copying create-client.sh to volume..."
+    cp "$DEFAULT_CREATE_CLIENT_SCRIPT" "$CREATE_CLIENT_SCRIPT"
+    chmod +x "$CREATE_CLIENT_SCRIPT"
 fi
 
 if [ -z "$WIREGUARD_INTERFACE" ]; then
