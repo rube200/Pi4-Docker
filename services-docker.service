@@ -8,6 +8,7 @@ RequiresMountsFor=/var/run/docker.sock
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/Pi4-Docker
+EnvironmentFile=/opt/Pi4-Docker/.env
 ExecStartPre=/opt/Pi4-Docker/extra-script/firewall-rules.sh
 ExecStartPre=/opt/Pi4-Docker/extra-script/update-dns-record-hostinger.sh
 ExecStart=/usr/bin/docker compose up -d

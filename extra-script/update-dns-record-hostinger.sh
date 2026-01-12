@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly HOSTINGER_API_BASE="https://api.hostinger.com"
+readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
 
-if [[ -z "${DNS_API:-}" ]]; then
+if [[ -z "${DNS_API}" ]]; then
     echo "Error: DNS_API environment variable required"
     exit 1
 fi
 
-if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
+if [[ -z "${SERVER_HOSTNAME}" ]]; then
     echo "Error: SERVER_HOSTNAME environment variable required"
     exit 1
 fi
@@ -20,7 +20,7 @@ public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || \
             curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null)
 
 if [[ ! "$public_ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-    echo "Failed to get public IP"
+    echo "Error: Failed to get public IP"
     exit 1
 fi
 
@@ -29,57 +29,54 @@ records_response=$(curl -s -w "\n%{http_code}" \
     -H "Authorization: Bearer ${DNS_API}" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
-    "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}")
+    "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
 
 http_code=$(echo "$records_response" | tail -n1)
 records_body=$(echo "$records_response" | sed '$d')
 
 if [[ "$http_code" != "200" ]]; then
-    echo "Failed to fetch DNS records. HTTP $http_code"
+    echo "Error: Failed to fetch DNS records. HTTP $http_code"
+    echo "Response: ${records_body}"
     exit 1
 fi
 
-temp_file=$(mktemp)
-trap "rm -f '$temp_file'" EXIT
-echo "$records_body" > "$temp_file"
-
-record_ids=($(grep -o "\"id\"[[:space:]]*:[[:space:]]*[0-9]*" "$temp_file" | grep -o "[0-9]*" | sort -u))
-
-record_id=""
 current_ip=""
+record_name=""
+records_list=$(echo "$records_body" | sed 's/^\[//;s/\]$//' | sed 's/},{/}\n{/g' 2>/dev/null || echo "$records_body")
 
-for rid in "${record_ids[@]}"; do
-    record_block=$(grep -A 10 "\"id\"[[:space:]]*:[[:space:]]*${rid}" "$temp_file" | head -n 10)
-
-    if echo "$record_block" | grep -q "\"type\"[[:space:]]*:[[:space:]]*\"A\"" && \
-       echo "$record_block" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"\@\""; then
-        current_ip=$(echo "$record_block" | grep "\"value\"[[:space:]]*:" | \
-            sed 's/.*"value"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-        record_id="$rid"
-        break
-    fi
+for name in "@" "*"; do
+    while IFS= read -r record_obj; do
+        if echo "$record_obj" | grep -q '"type":"A"' && \
+           echo "$record_obj" | grep -q "\"name\":\"${name}\""; then
+            ip_candidate=$(echo "$record_obj" | grep -o '"content":"[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}"' | \
+                          head -1 | sed 's/"content":"\([^"]*\)"/\1/')
+            if [[ -n "$ip_candidate" ]] && [[ "$ip_candidate" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                current_ip="$ip_candidate"
+                record_name="$name"
+                break 2
+            fi
+        fi
+    done <<< "$records_list"
 done
 
-rm -f "$temp_file"
-trap - EXIT
-
-if [[ -n "$record_id" ]] && [[ -n "$current_ip" ]]; then
+if [[ -n "$current_ip" ]]; then
     if [[ "$current_ip" != "$public_ip" ]]; then
         echo "Updating A record: ${current_ip} -> ${public_ip}"
-        json_payload="{\"type\":\"A\",\"name\":\"\@\",\"value\":\"${public_ip}\",\"ttl\":3600}"
-
-        update_response=$(curl -s -w "\n%{http_code}" \
+        json_payload="{\"name\":\"${record_name}\",\"type\":\"A\",\"records\":[{\"content\":\"${public_ip}\",\"is_disabled\":false}],\"ttl\":3600}"
+        
+        response=$(curl -s -w "\n%{http_code}" \
             -X PUT \
             -H "Authorization: Bearer ${DNS_API}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -d "$json_payload" \
-            "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}/records/${record_id}")
-
-        http_code=$(echo "$update_response" | tail -n1)
-
+            "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}/records" 2>&1) || true
+        
+        http_code=$(echo "$response" | tail -n1)
+        
         if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
-            echo "Failed to update A record. HTTP $http_code"
+            echo "Error: Failed to update A record. HTTP $http_code"
+            echo "$response" | sed '$d'
             exit 1
         fi
         echo "A record updated successfully"
@@ -87,20 +84,24 @@ if [[ -n "$record_id" ]] && [[ -n "$current_ip" ]]; then
         echo "A record is up to date (${current_ip})"
     fi
 else
-    json_payload="{\"type\":\"A\",\"name\":\"\@\",\"value\":\"${public_ip}\",\"ttl\":3600}"
-    create_response=$(curl -s -w "\n%{http_code}" \
+    echo "Creating A record..."
+    json_payload="{\"type\":\"A\",\"name\":\"@\",\"value\":\"${public_ip}\",\"ttl\":3600}"
+    zone_domain=$(echo "${SERVER_HOSTNAME}" | tr '[:upper:]' '[:lower:]')
+    
+    response=$(curl -s -w "\n%{http_code}" \
         -X POST \
         -H "Authorization: Bearer ${DNS_API}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json" \
         -d "$json_payload" \
-        "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}/records")
-
-    http_code=$(echo "$create_response" | tail -n1)
+        "${HOSTINGER_API_BASE}/api/dns/v1/zones/${zone_domain}/records" 2>&1) || true
+    
+    http_code=$(echo "$response" | tail -n1)
+    
     if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
-        echo "Failed to create A record. HTTP $http_code"
+        echo "Error: Failed to create A record. HTTP $http_code"
+        echo "$response" | sed '$d'
         exit 1
     fi
-
     echo "A record created successfully"
 fi

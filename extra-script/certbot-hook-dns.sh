@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly HOSTINGER_API_BASE="https://api.hostinger.com"
+readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
 
 if [[ -z "${DNS_API:-}" ]]; then
     echo "Error: DNS_API environment variable required" >&2
