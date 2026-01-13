@@ -178,11 +178,7 @@ chmod 600 "${client}.conf"
 
 echo
 echo "Client config created: ${client}.conf"
-if command -v qrencode >/dev/null 2>&1; then
-    echo
-    qrencode -t UTF8 < "${client}.conf"
-    echo
-fi
+echo
 
 WIREGUARD_INTERFACE="${WIREGUARD_INTERFACE:-wg0}"
 echo "Reloading WireGuard configuration..."

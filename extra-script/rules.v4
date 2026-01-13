@@ -48,10 +48,6 @@
 #ALLOW LOCAL NETWORK AND MULTICAST
 -A INPUT -s 127.0.0.0/8 -j ACCEPT
 
-#ALLOW DOCKER INTERNAL COMMUNICATION
--A INPUT -i docker0 -j ACCEPT
--A INPUT -i br-+ -j ACCEPT
-
 #ALLOW LOCAL SSH
 -A INPUT -s 10.13.13.0/30 -p tcp --dport 22 -j ACCEPT
 -A INPUT -s 192.168.1.0/24 -p tcp --dport 22 -j ACCEPT
@@ -60,29 +56,35 @@
 
 #ALLOW HTTP/HTTPS WITH RATE LIMIT
 -A INPUT -s 10.13.13.0/24 -p tcp --dport 80 -j ACCEPT
+-A INPUT -s 172.18.0.0/16 -p tcp --dport 80 -j ACCEPT
 -A INPUT -s 192.168.2.0/24 -p tcp --dport 80 -j ACCEPT
 -A INPUT -p tcp --dport 80 -j PROTECTION_DDOS
 
 -A INPUT -s 10.13.13.0/24 -p tcp --dport 443 -j ACCEPT
+-A INPUT -s 172.18.0.0/16 -p tcp --dport 443 -j ACCEPT
 -A INPUT -s 192.168.2.0/24 -p tcp --dport 443 -j ACCEPT
 -A INPUT -p tcp --dport 443 -j PROTECTION_DDOS
 
 #ALLOW DNS (Pi-hole) WITH RATE LIMIT
 -A INPUT -s 10.13.13.0/24 -p tcp --dport 53 -j ACCEPT
+-A INPUT -s 172.18.0.0/16 -p tcp --dport 53 -j ACCEPT
 -A INPUT -s 192.168.2.0/24 -p tcp --dport 53 -j ACCEPT
 -A INPUT -p tcp --dport 53 -j PROTECTION_DNS
 
 -A INPUT -s 10.13.13.0/24 -p udp --dport 53 -j ACCEPT
+-A INPUT -s 172.18.0.0/16 -p udp --dport 53 -j ACCEPT
 -A INPUT -s 192.168.2.0/24 -p udp --dport 53 -j ACCEPT
 -A INPUT -p udp --dport 53 -j PROTECTION_DNS
 
 #ALLOW DNS OVER HTTPS (DoH via nginx)
 -A INPUT -s 10.13.13.0/24 -p tcp --dport 440 -j ACCEPT
+-A INPUT -s 172.18.0.0/16 -p tcp --dport 440 -j ACCEPT
 -A INPUT -s 192.168.2.0/24 -p tcp --dport 440 -j ACCEPT
 -A INPUT -p tcp --dport 440 -j PROTECTION_DNS
 
 #ALLOW DNS OVER TLS (DoT via nginx)
 -A INPUT -s 10.13.13.0/24 -p tcp --dport 853 -j ACCEPT
+-A INPUT -s 172.18.0.0/16 -p tcp --dport 853 -j ACCEPT
 -A INPUT -s 192.168.2.0/24 -p tcp --dport 853 -j ACCEPT
 -A INPUT -p tcp --dport 853 -j PROTECTION_DNS
 
@@ -94,11 +96,27 @@
 -P INPUT DROP
 
 ###
+### FORWARD
+###
+
+#ALLOW RELATED TRAFFIC
+-A FORWARD -i eth+ -o docker+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+#ALLOW DOCKER COMMUNICATION
+-A FORWARD -i docker+ -o docker+ -j ACCEPT
+-A FORWARD -i docker+ -o eth+ -j ACCEPT
+
+
+###
 ### OUTPUT
 ###
 
 #ALLOW LOCAL NETWORK AND MULTICAST
 -A OUTPUT -d 127.0.0.0/8 -j ACCEPT
+
+#ALLOW DOCKER INTERNAL COMMUNICATION (for host-to-container)
+-A OUTPUT -o docker0 -j ACCEPT
+-A OUTPUT -o br-+ -j ACCEPT
 
 #BLOCK NON LOCAL SSH
 -A OUTPUT -d 192.168.0.0/24 -p tcp --sport 22 -j ACCEPT
@@ -108,19 +126,23 @@
 
 #BLOCK NON LOCAL DNS (Pi-hole)
 -A OUTPUT -d 10.13.13.0/24 -p tcp --sport 53 -j ACCEPT
+-A OUTPUT -d 172.18.0.0/16 -p tcp --sport 53 -j ACCEPT
 -A OUTPUT -d 192.168.2.0/24 -p tcp --sport 53 -j ACCEPT
 -A OUTPUT -p tcp --sport 53 -j DROP
 
 -A OUTPUT -d 10.13.13.0/24 -p udp --sport 53 -j ACCEPT
+-A OUTPUT -d 172.18.0.0/16 -p udp --sport 53 -j ACCEPT
 -A OUTPUT -d 192.168.2.0/24 -p udp --sport 53 -j ACCEPT
 -A OUTPUT -p udp --sport 53 -j DROP
 
 #BLOCK NON LOCAL DNS (Unbound)
 -A OUTPUT -d 10.13.13.0/24 -p tcp --sport 5335 -j ACCEPT
+-A OUTPUT -d 172.18.0.0/16 -p tcp --sport 5335 -j ACCEPT
 -A OUTPUT -d 192.168.2.0/24 -p tcp --sport 5335 -j ACCEPT
 -A OUTPUT -p tcp --sport 5335 -j DROP
 
 -A OUTPUT -d 10.13.13.0/24 -p udp --sport 5335 -j ACCEPT
+-A OUTPUT -d 172.18.0.0/16 -p udp --sport 5335 -j ACCEPT
 -A OUTPUT -d 192.168.2.0/24 -p udp --sport 5335 -j ACCEPT
 -A OUTPUT -p udp --sport 5335 -j DROP
 COMMIT
@@ -131,5 +153,6 @@ COMMIT
 :INPUT ACCEPT [0:0]
 :OUTPUT ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
--A POSTROUTING -o eth0 -j MASQUERADE
+#MASQUERADE WIREGUARD
+-A POSTROUTING -o eth+ -j MASQUERADE
 COMMIT
