@@ -2,28 +2,23 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RULES_V4="$SCRIPT_DIR/rules.v4"
-RULES_V6="$SCRIPT_DIR/rules.v6"
-IPTABLES_DIR="/etc/iptables"
-TARGET_V4="$IPTABLES_DIR/rules.v4"
-TARGET_V6="$IPTABLES_DIR/rules.v6"
+NFTABLES_CONF="$SCRIPT_DIR/nftables.conf"
+TARGET_CONF="/etc/nftables.conf"
 
-if [ ! -f "$RULES_V4" ]; then
-    echo "Error: $RULES_V4 not found"
+if [ ! -f "$NFTABLES_CONF" ]; then
+    echo "Error: $NFTABLES_CONF not found"
     exit 1
 fi
 
-if [ ! -f "$RULES_V6" ]; then
-    echo "Error: $RULES_V6 not found"
-    exit 1
-fi
+echo "Copying nftables configuration to $TARGET_CONF..."
+cp "$NFTABLES_CONF" "$TARGET_CONF"
+chmod 644 "$TARGET_CONF"
 
-mkdir -p "$IPTABLES_DIR"
+echo "Loading nftables rules..."
+nft -f "$TARGET_CONF"
 
-echo "Copying firewall rules to $IPTABLES_DIR..."
-cp "$RULES_V4" "$TARGET_V4"
-cp "$RULES_V6" "$TARGET_V6"
+echo "Enabling and starting nftables service..."
+systemctl enable nftables.service 2>/dev/null || true
+systemctl restart nftables.service 2>/dev/null || true
 
-echo "Restarting netfilter-persistent service..."
-systemctl restart netfilter-persistent.service
 echo "Firewall rules applied successfully"
