@@ -2,7 +2,6 @@ upstream doh-proxy {
     zone doh-proxy 64k;
 
     server doh:3000;
-    server [::1]:3000;
 }
 
 server {
