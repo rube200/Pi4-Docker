@@ -41,7 +41,6 @@ if [[ "$http_code" != "200" ]]; then
 fi
 
 current_ip=""
-record_name=""
 records_list=$(echo "$records_body" | sed 's/^\[//;s/\]$//' | sed 's/},{/}\n{/g' 2>/dev/null || echo "$records_body")
 
 for name in "@" "*"; do
@@ -52,7 +51,6 @@ for name in "@" "*"; do
                           head -1 | sed 's/"content":"\([^"]*\)"/\1/')
             if [[ -n "$ip_candidate" ]] && [[ "$ip_candidate" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
                 current_ip="$ip_candidate"
-                record_name="$name"
                 break 2
             fi
         fi
@@ -62,18 +60,15 @@ done
 if [[ -n "$current_ip" ]]; then
     if [[ "$current_ip" != "$public_ip" ]]; then
         echo "Updating A record: ${current_ip} -> ${public_ip}"
-        json_payload="{\"name\":\"${record_name}\",\"type\":\"A\",\"records\":[{\"content\":\"${public_ip}\",\"is_disabled\":false}],\"ttl\":3600}"
-        
+        json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
         response=$(curl -s -w "\n%{http_code}" \
             -X PUT \
             -H "Authorization: Bearer ${DNS_API}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -d "$json_payload" \
-            "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}/records" 2>&1) || true
-        
+            "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
         http_code=$(echo "$response" | tail -n1)
-        
         if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
             echo "Error: Failed to update A record. HTTP $http_code"
             echo "$response" | sed '$d'
@@ -85,19 +80,15 @@ if [[ -n "$current_ip" ]]; then
     fi
 else
     echo "Creating A record..."
-    json_payload="{\"type\":\"A\",\"name\":\"@\",\"value\":\"${public_ip}\",\"ttl\":3600}"
-    zone_domain=$(echo "${SERVER_HOSTNAME}" | tr '[:upper:]' '[:lower:]')
-    
+    json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
     response=$(curl -s -w "\n%{http_code}" \
-        -X POST \
+        -X PUT \
         -H "Authorization: Bearer ${DNS_API}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json" \
         -d "$json_payload" \
-        "${HOSTINGER_API_BASE}/api/dns/v1/zones/${zone_domain}/records" 2>&1) || true
-    
+        "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
     http_code=$(echo "$response" | tail -n1)
-    
     if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
         echo "Error: Failed to create A record. HTTP $http_code"
         echo "$response" | sed '$d'
