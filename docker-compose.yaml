@@ -27,7 +27,6 @@ services:
     ports:
       - "53:53/tcp"
       - "53:53/udp"
-      - "67:67/udp"
       - "44353:44353/tcp"
     environment:
       TZ: 'Europe/Lisbon'
@@ -58,6 +57,20 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+
+  dhcp-relay:
+    container_name: dhcp-relay
+    depends_on:
+      pihole:
+        condition: service_healthy
+    image: homeall/dhcphelper:latest
+    environment:
+      IP: pihole
+      TZ: 'Europe/Lisbon'
+    cap_add:
+      - NET_ADMIN
+    network_mode: host
     restart: unless-stopped
 
   doh:
@@ -96,7 +109,6 @@ services:
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
-      - "443:443/udp"
       - "440:440/tcp"
       - "853:853/tcp"
     environment:
