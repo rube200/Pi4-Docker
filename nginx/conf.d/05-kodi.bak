@@ -1,6 +1,6 @@
 server {
-    access_log /var/log/nginx/access_home-assistant.log;
-    error_log /var/log/nginx/error_home-assistant.log;
+    access_log /var/log/nginx/access_kodi.log;
+    error_log /var/log/nginx/error_kodi.log;
 
     include /etc/nginx/common.d/common.conf;
 

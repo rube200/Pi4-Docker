@@ -15,12 +15,12 @@ server {
 
     add_header X-Pi-hole "The Pi-hole Web interface is working!";
     location /admin {
-        proxy_pass https://pihole:44353/admin;
+        proxy_pass https://172.28.0.3:44353/admin;
         include /etc/nginx/common.d/proxy_params.conf;
     }
 
     location /api {
-        proxy_pass https://pihole:44353/api;
+        proxy_pass https://172.28.0.3:44353/api;
         include /etc/nginx/common.d/proxy_params.conf;
     }
 }

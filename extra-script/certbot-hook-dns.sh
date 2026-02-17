@@ -4,8 +4,8 @@ set -euo pipefail
 readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
 
 if [[ -z "${DNS_API:-}" ]]; then
-    echo "Error: DNS_API environment variable required" >&2
-    exit 1
+    echo "DNS_API not set, skipping Hostinger DNS challenge" >&2
+    exit 0
 fi
 
 if [[ -z "${CERTBOT_DOMAIN:-}" ]] || [[ -z "${CERTBOT_VALIDATION:-}" ]]; then

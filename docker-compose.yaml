@@ -88,7 +88,7 @@ services:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - DOH_UPSTREAM_DNS=${DOH_UPSTREAM_DNS:-172.28.0.3:53}
       - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
-      - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-443}
+      - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-440}
     networks:
       services_network:
         ipv4_address: 172.28.0.4
@@ -115,7 +115,7 @@ services:
       - "440:440/tcp"
       - "853:853/tcp"
     environment:
-      - DNS_API=${DNS_API}
+      - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
     volumes:
       - '/etc/letsencrypt:/etc/letsencrypt'
@@ -168,7 +168,6 @@ services:
 networks:
   services_network:
     driver: bridge
-    enable_ipv6: true
     ipam:
       config:
         - subnet: 172.28.0.0/16

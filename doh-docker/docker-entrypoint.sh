@@ -6,6 +6,11 @@ ARCH=$(uname -m)
 case "$ARCH" in
     x86_64) ARCH_SUFFIX="x86_64" ;;
     aarch64) ARCH_SUFFIX="aarch64" ;;
+    armv7l|armhf)
+        echo "Error: 32-bit ARM (armv7l) is not supported. doh-server only provides x86_64 and aarch64 builds."
+        echo "Use 64-bit Raspberry Pi OS (aarch64) instead."
+        exit 1
+        ;;
     *) echo "Error: Unsupported architecture: $ARCH" && exit 1 ;;
 esac
 
@@ -73,7 +78,7 @@ fi
 
 DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-consulta-dns}"
 DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-440}"
-DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-pihole:53}"
+DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-172.28.0.3:53}"
 
 echo "Starting doh-server..."
 exec "$BINARY_PATH" \

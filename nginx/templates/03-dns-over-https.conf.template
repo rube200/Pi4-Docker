@@ -1,7 +1,7 @@
 upstream doh-proxy {
     zone doh-proxy 64k;
 
-    server doh:3000;
+    server 172.28.0.4:3000;
 }
 
 server {
@@ -23,7 +23,7 @@ server {
     access_log off;
     log_not_found off;
 
-    location ~* /consulta\-dns$ {
+    location ~* /$DOH_PATH_PREFIX {
         proxy_pass http://doh-proxy;
         include /etc/nginx/common.d/proxy_params.conf;    
     }

@@ -3,9 +3,9 @@ set -euo pipefail
 
 readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
 
-if [[ -z "${DNS_API}" ]]; then
-    echo "Error: DNS_API environment variable required"
-    exit 1
+if [[ -z "${DNS_API:-}" ]]; then
+    echo "DNS_API not set, skipping Hostinger DNS record update"
+    exit 0
 fi
 
 if [[ -z "${SERVER_HOSTNAME}" ]]; then
@@ -19,7 +19,7 @@ public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || \
             curl -s --max-time 5 https://icanhazip.com 2>/dev/null || \
             curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null)
 
-if [[ ! "$public_ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+if [[ ! "$public_ip" =~ ^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]; then
     echo "Error: Failed to get public IP"
     exit 1
 fi
