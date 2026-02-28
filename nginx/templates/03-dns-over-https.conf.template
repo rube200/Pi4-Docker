@@ -14,7 +14,7 @@ server {
 
     server_name $SERVER_HOSTNAME;
 
-    ssl_protocols TLSv1.3;
+    ssl_protocols TLSv1.2 TLSv1.3;
     ssl_certificate /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 
@@ -39,7 +39,7 @@ server {
 
     server_name _;
 
-    ssl_protocols TLSv1.3;
+    ssl_protocols TLSv1.2 TLSv1.3;
     ssl_certificate /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
 
