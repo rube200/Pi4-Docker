@@ -15,7 +15,7 @@ COPY templates/ /etc/nginx/templates/
 
 COPY html/ /usr/share/nginx/html/
 
-RUN mkdir -p /etc/nginx/ssl /var/www/certbot /docker-entrypoint.d
+RUN mkdir -p /etc/nginx/ssl /var/www/certbot /var/cache/nginx/proxy /docker-entrypoint.d
 
 COPY docker-entrypoint.sh /docker-entrypoint.d/10-cert-renewal.sh
 RUN chmod +x /docker-entrypoint.d/10-cert-renewal.sh
