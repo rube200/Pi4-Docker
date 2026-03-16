@@ -6,7 +6,6 @@ services:
     ports:
       - "5335:5335/udp"
       - "5335:5335/tcp"
-    privileged: true
     networks:
       services_network:
         ipv4_address: 172.28.0.2
@@ -43,6 +42,7 @@ services:
       FTLCONF_webserver_domain: ${SERVER_HOSTNAME}
       FTLCONF_webserver_port: +44353s
       FTLCONF_webserver_session_timeout: 2592000
+      FTLCONF_webserver_tls_validity: 365
     volumes:
       - '/etc/pihole:/etc/pihole'
     cap_add:

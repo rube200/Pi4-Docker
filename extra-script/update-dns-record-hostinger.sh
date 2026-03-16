@@ -1,15 +1,16 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
 readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
+readonly IPV4_REGEX='^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$'
 
 if [[ -z "${DNS_API:-}" ]]; then
-    echo "DNS_API not set, skipping Hostinger DNS record update"
+    echo "DNS_API not set, skipping Hostinger DNS record update" >&2
     exit 0
 fi
 
-if [[ -z "${SERVER_HOSTNAME}" ]]; then
-    echo "Error: SERVER_HOSTNAME environment variable required"
+if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
+    echo "Error: SERVER_HOSTNAME environment variable required" >&2
     exit 1
 fi
 
@@ -19,8 +20,8 @@ public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || \
             curl -s --max-time 5 https://icanhazip.com 2>/dev/null || \
             curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null)
 
-if [[ ! "$public_ip" =~ ^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]; then
-    echo "Error: Failed to get public IP"
+if [[ ! "$public_ip" =~ $IPV4_REGEX ]]; then
+    echo "Error: Failed to get public IP" >&2
     exit 1
 fi
 
@@ -35,8 +36,8 @@ http_code=$(echo "$records_response" | tail -n1)
 records_body=$(echo "$records_response" | sed '$d')
 
 if [[ "$http_code" != "200" ]]; then
-    echo "Error: Failed to fetch DNS records. HTTP $http_code"
-    echo "Response: ${records_body}"
+    echo "Error: Failed to fetch DNS records. HTTP $http_code" >&2
+    echo "Response: ${records_body}" >&2
     exit 1
 fi
 
@@ -49,7 +50,7 @@ for name in "@" "*"; do
            echo "$record_obj" | grep -q "\"name\":\"${name}\""; then
             ip_candidate=$(echo "$record_obj" | grep -o '"content":"[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}"' | \
                           head -1 | sed 's/"content":"\([^"]*\)"/\1/')
-            if [[ -n "$ip_candidate" ]] && [[ "$ip_candidate" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            if [[ -n "$ip_candidate" ]] && [[ "$ip_candidate" =~ $IPV4_REGEX ]]; then
                 current_ip="$ip_candidate"
                 break 2
             fi
@@ -70,8 +71,8 @@ if [[ -n "$current_ip" ]]; then
             "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
         http_code=$(echo "$response" | tail -n1)
         if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
-            echo "Error: Failed to update A record. HTTP $http_code"
-            echo "$response" | sed '$d'
+            echo "Error: Failed to update A record. HTTP $http_code" >&2
+            echo "$response" | sed '$d' >&2
             exit 1
         fi
         echo "A record updated successfully"
@@ -90,8 +91,8 @@ else
         "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
     http_code=$(echo "$response" | tail -n1)
     if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
-        echo "Error: Failed to create A record. HTTP $http_code"
-        echo "$response" | sed '$d'
+        echo "Error: Failed to create A record. HTTP $http_code" >&2
+        echo "$response" | sed '$d' >&2
         exit 1
     fi
     echo "A record created successfully"

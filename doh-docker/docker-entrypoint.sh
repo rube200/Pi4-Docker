@@ -1,51 +1,53 @@
 #!/bin/sh
 set -e
 
-#Check architecture
+readonly BINARY_PATH="/usr/local/bin/doh-proxy"
+readonly DNS_CHECK_HOST="github.com"
+readonly MAX_DNS_ATTEMPTS=30
+
+# Check architecture
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64) ARCH_SUFFIX="x86_64" ;;
     aarch64) ARCH_SUFFIX="aarch64" ;;
     armv7l|armhf)
-        echo "Error: 32-bit ARM (armv7l) is not supported. doh-server only provides x86_64 and aarch64 builds."
-        echo "Use 64-bit Raspberry Pi OS (aarch64) instead."
+        echo "Error: 32-bit ARM (armv7l) is not supported. doh-server only provides x86_64 and aarch64 builds." >&2
+        echo "Use 64-bit Raspberry Pi OS (aarch64) instead." >&2
         exit 1
         ;;
-    *) echo "Error: Unsupported architecture: $ARCH" && exit 1 ;;
+    *) echo "Error: Unsupported architecture: $ARCH" >&2 && exit 1 ;;
 esac
 
-[ -z "$SERVER_HOSTNAME" ] && echo "Error: SERVER_HOSTNAME is not set and no config file found" && exit 1
+[ -z "$SERVER_HOSTNAME" ] && echo "Error: SERVER_HOSTNAME is not set and no config file found" >&2 && exit 1
 
-#Wait for DNS to be ready (to resolve github.com for API calls)
+# Wait for DNS to be ready (to resolve github.com for API calls)
 echo "Waiting for DNS to be ready..."
 ATTEMPT=0
-MAX_ATTEMPTS=30
-while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-    if getent hosts github.com >/dev/null 2>&1; then
+while [ $ATTEMPT -lt $MAX_DNS_ATTEMPTS ]; do
+    if getent hosts "$DNS_CHECK_HOST" >/dev/null 2>&1; then
         break
     fi
     ATTEMPT=$((ATTEMPT + 1))
-    [ $ATTEMPT -lt $MAX_ATTEMPTS ] && sleep 2
+    [ $ATTEMPT -lt $MAX_DNS_ATTEMPTS ] && sleep 2
 done
 
-if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-    echo "Error: DNS not available after $MAX_ATTEMPTS attempts"
+if [ $ATTEMPT -eq $MAX_DNS_ATTEMPTS ]; then
+    echo "Error: DNS not available after $MAX_DNS_ATTEMPTS attempts" >&2
     exit 1
 fi
 
-#Retrieve current binary version
-BINARY_PATH="/usr/local/bin/doh-proxy"
+# Retrieve current binary version
 CURRENT_VERSION=""
 if [ -f "$BINARY_PATH" ] && [ -x "$BINARY_PATH" ]; then
     CURRENT_VERSION=$($BINARY_PATH --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
 fi
 
-#Check if binary is up to date or download latest version
-GITHUB_API_RESPONSE=$(curl -sf https://api.github.com/repos/DNSCrypt/doh-server/releases/latest 2>&1)
+# Check if binary is up to date or download latest version
+GITHUB_API_RESPONSE=$(curl -sf "https://api.github.com/repos/DNSCrypt/doh-server/releases/latest" 2>&1)
 GITHUB_API_EXIT_CODE=$?
 if [ $GITHUB_API_EXIT_CODE -ne 0 ]; then
-    echo "Error: Failed to fetch latest version from GitHub API (exit code: $GITHUB_API_EXIT_CODE)"
-    echo "Error: Response: $GITHUB_API_RESPONSE"
+    echo "Error: Failed to fetch latest version from GitHub API (exit code: $GITHUB_API_EXIT_CODE)" >&2
+    echo "Error: Response: $GITHUB_API_RESPONSE" >&2
     LATEST_VERSION=""
 else
     LATEST_VERSION=$(echo "$GITHUB_API_RESPONSE" | jq -r '.tag_name' | sed 's/^v//' 2>&1)
@@ -66,13 +68,13 @@ if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
         chmod +x "$BINARY_PATH"
         rm -rf "$EXTRACT_DIR" /tmp/doh-proxy.tar.bz2
     else
-        echo "Error: Download failed (exit code: $DOWNLOAD_EXIT_CODE)"
-        echo "Error: Download output: $DOWNLOAD_OUTPUT"
+        echo "Error: Download failed (exit code: $DOWNLOAD_EXIT_CODE)" >&2
+        echo "Error: Download output: $DOWNLOAD_OUTPUT" >&2
     fi
 fi
 
 if [ ! -f "$BINARY_PATH" ]; then
-    echo "Error: Could not fetch latest version and no binary available"
+    echo "Error: Could not fetch latest version and no binary available" >&2
     exit 1
 fi
 

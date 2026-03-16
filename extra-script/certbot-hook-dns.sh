@@ -1,7 +1,8 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
 readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
+readonly ACME_CHALLENGE_NAME="_acme-challenge"
 
 if [[ -z "${DNS_API:-}" ]]; then
     echo "DNS_API not set, skipping Hostinger DNS challenge" >&2
@@ -20,12 +21,11 @@ if [[ "$domain" =~ ^\*\. ]]; then
     domain="${domain#*.}"
 fi
 
-name="_acme-challenge"
 flag_file="/tmp/certbot-${validation}.flag"
 if [[ -f "$flag_file" ]]; then
     rm -f "$flag_file"
 
-    echo "Deleting TXT record for ${name}.${domain}..."
+    echo "Deleting TXT record for ${ACME_CHALLENGE_NAME}.${domain}..."
     records_response=$(curl -s -w "\n%{http_code}" \
         -H "Authorization: Bearer ${DNS_API}" \
         -H "Content-Type: application/json" \
@@ -44,7 +44,7 @@ if [[ -f "$flag_file" ]]; then
         for rid in "${record_ids[@]}"; do
             record_block=$(grep -A 10 "\"id\"[[:space:]]*:[[:space:]]*${rid}" "$temp_file" | head -n 10)
             if echo "$record_block" | grep -q "\"type\"[[:space:]]*:[[:space:]]*\"TXT\"" && \
-               echo "$record_block" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${name}\"" && \
+               echo "$record_block" | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"${ACME_CHALLENGE_NAME}\"" && \
                echo "$record_block" | grep -q "\"value\"[[:space:]]*:[[:space:]]*\"${validation}\""; then
                 delete_response=$(curl -s -w "\n%{http_code}" \
                     -X DELETE \
@@ -64,8 +64,8 @@ if [[ -f "$flag_file" ]]; then
 else
     touch "$flag_file"
 
-    echo "Creating TXT record for ${name}.${domain}..."
-    json_payload="{\"type\":\"TXT\",\"name\":\"${name}\",\"value\":\"${validation}\",\"ttl\":3600}"
+    echo "Creating TXT record for ${ACME_CHALLENGE_NAME}.${domain}..."
+    json_payload="{\"type\":\"TXT\",\"name\":\"${ACME_CHALLENGE_NAME}\",\"value\":\"${validation}\",\"ttl\":3600}"
     response=$(curl -s -w "\n%{http_code}" \
         -X POST \
         -H "Authorization: Bearer ${DNS_API}" \
@@ -77,7 +77,7 @@ else
     http_code=$(echo "$response" | tail -n1)
     if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
         rm -f "$flag_file"
-        echo "Failed to create TXT record. HTTP $http_code"
+        echo "Error: Failed to create TXT record. HTTP $http_code" >&2
         exit 1
     fi
 

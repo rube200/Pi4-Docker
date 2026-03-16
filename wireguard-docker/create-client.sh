@@ -1,17 +1,23 @@
 #!/bin/sh
 set -e
 
-cd /etc/wireguard
+readonly WG_CONF_DIR="/etc/wireguard"
+readonly DEFAULT_WG_CONFIG="wg0.conf"
+readonly DEFAULT_WG_PORT=51820
+readonly DEFAULT_WG_CONTAINER="wireguard"
+
+cd "$WG_CONF_DIR"
 umask 077
 
-WIREGUARD_CONFIG="${WIREGUARD_CONFIG:-wg0.conf}"
-SERVER_CONFIG="/etc/wireguard/${WIREGUARD_CONFIG}"
+WIREGUARD_CONFIG="${WIREGUARD_CONFIG:-$DEFAULT_WG_CONFIG}"
+WIREGUARD_INTERFACE="${WIREGUARD_INTERFACE:-${WIREGUARD_CONFIG%.conf}}"
+SERVER_CONFIG="${WG_CONF_DIR}/${WIREGUARD_CONFIG}"
 SERVER_HOSTNAME="${SERVER_HOSTNAME:-}"
-SERVER_PORT="${WIREGUARD_PORT:-51820}"
-WIREGUARD_CONTAINER="${WIREGUARD_CONTAINER:-wireguard}"
+SERVER_PORT="${WIREGUARD_PORT:-$DEFAULT_WG_PORT}"
+WIREGUARD_CONTAINER="${WIREGUARD_CONTAINER:-$DEFAULT_WG_CONTAINER}"
 
 if [ ! -r "$SERVER_CONFIG" ]; then
-    echo "Error: Server config $SERVER_CONFIG not found"
+    echo "Error: Server config $SERVER_CONFIG not found" >&2
     exit 1
 fi
 
@@ -20,7 +26,7 @@ if command -v wg >/dev/null 2>&1; then
 elif docker ps --format '{{.Names}}' | grep -q "^${WIREGUARD_CONTAINER}$"; then
     WG_CMD="docker exec ${WIREGUARD_CONTAINER} wg"
 else
-    echo "Error: 'wg' command not available and WireGuard container '${WIREGUARD_CONTAINER}' not running"
+    echo "Error: 'wg' command not available and WireGuard container '${WIREGUARD_CONTAINER}' not running" >&2
     exit 1
 fi
 
@@ -30,7 +36,7 @@ else
     SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | docker exec -i "${WIREGUARD_CONTAINER}" wg pubkey)
 fi
 if [ -z "$SERVER_PUBLIC_KEY" ]; then
-    echo "Error: Could not extract server public key from $SERVER_CONFIG"
+    echo "Error: Could not extract server public key from $SERVER_CONFIG" >&2
     exit 1
 fi
 
@@ -43,7 +49,7 @@ else
 fi
 
 if [ -z "$SERVER_ADDRESS" ]; then
-    echo "Error: Could not determine server address"
+    echo "Error: Could not determine server address" >&2
     exit 1
 fi
 
@@ -62,7 +68,7 @@ echo
 echo "Provide a name for the client:"
 read -p "Name: " unsanitized_client
 client=$(echo "$unsanitized_client" | sed 's/[^0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-]/_/g')
-while [ -z "$client" ] || [ -f "/etc/wireguard/${client}.conf" ]; do
+while [ -z "$client" ] || [ -f "${WG_CONF_DIR}/${client}.conf" ]; do
     echo "${client}: Invalid name or already exists."
     read -p "Name: " unsanitized_client
     client=$(echo "$unsanitized_client" | sed 's/[^0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-]/_/g')
@@ -85,7 +91,7 @@ fi
 
 count=$((max_count + 1))
 if [ "$count" -lt 2 ] || [ "$count" -gt 254 ]; then
-    echo "Error: Could not find a valid IP address (next would be ${count}, must be 2-254)"
+    echo "Error: Could not find a valid IP address (next would be ${count}, must be 2-254)" >&2
     exit 1
 fi
 
@@ -180,7 +186,6 @@ echo
 echo "Client config created: ${client}.conf"
 echo
 
-WIREGUARD_INTERFACE="${WIREGUARD_INTERFACE:-wg0}"
 echo "Reloading WireGuard configuration..."
 if $WG_CMD syncconf "$WIREGUARD_INTERFACE" "$SERVER_CONFIG" 2>/dev/null; then
     echo "Configuration reloaded successfully"

@@ -1,9 +1,15 @@
 #!/bin/sh
 set -e
 
-CONFIG_FILE="/etc/wireguard/${WIREGUARD_CONFIG}"
-TEMPLATE_FILE="/etc/wireguard/${WIREGUARD_CONFIG}.template"
-DEFAULT_TEMPLATE="/usr/local/share/wireguard/wg0.conf.template"
+[ -z "$SERVER_HOSTNAME" ] && echo "Error: SERVER_HOSTNAME is not set" >&2 && exit 1
+
+WIREGUARD_CONFIG="${WIREGUARD_CONFIG:-wg0.conf}"
+readonly WG_CONF_DIR="/etc/wireguard"
+readonly CONFIG_FILE="${WG_CONF_DIR}/${WIREGUARD_CONFIG}"
+readonly TEMPLATE_FILE="${WG_CONF_DIR}/${WIREGUARD_CONFIG}.template"
+readonly DEFAULT_TEMPLATE="/usr/local/share/wireguard/wg0.conf.template"
+readonly DEFAULT_CREATE_CLIENT_SCRIPT="/usr/local/bin/create-client.sh"
+readonly CREATE_CLIENT_SCRIPT="${WG_CONF_DIR}/create-client.sh"
 if [ ! -r "$CONFIG_FILE" ]; then
     if [ ! -r "$TEMPLATE_FILE" ] && [ -r "$DEFAULT_TEMPLATE" ]; then
         echo "Copying default template to volume..."
@@ -16,13 +22,11 @@ if [ ! -r "$CONFIG_FILE" ]; then
         cp "$TEMPLATE_FILE" "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
     else
-        echo "Error: $CONFIG_FILE not found and no template available"
+        echo "Error: $CONFIG_FILE not found and no template available" >&2
         exit 1
     fi
 fi
 
-DEFAULT_CREATE_CLIENT_SCRIPT="/usr/local/bin/create-client.sh"
-CREATE_CLIENT_SCRIPT="/etc/wireguard/create-client.sh"
 if [ -r "$DEFAULT_CREATE_CLIENT_SCRIPT" ]; then
     if [ ! -r "$CREATE_CLIENT_SCRIPT" ]; then
         echo "Copying create-client.sh to volume..."
@@ -61,7 +65,7 @@ cleanup() {
 trap cleanup TERM INT
 
 if wg show "$INTERFACE" >/dev/null 2>&1; then
-    echo "Warning: Interface $INTERFACE already exists, bringing it down..."
+    echo "Warning: Interface $INTERFACE already exists, bringing it down..." >&2
     wg-quick down "$INTERFACE" 2>/dev/null || true
     sleep 1
 fi
@@ -75,7 +79,7 @@ fi
 
 echo "Starting WireGuard interface $INTERFACE from $CONFIG_FILE..."
 if ! wg-quick up "$WG_CMD"; then
-    echo "Error: Failed to start WireGuard interface"
+    echo "Error: Failed to start WireGuard interface" >&2
     exit 1
 fi
 
