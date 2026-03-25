@@ -39,6 +39,7 @@ services:
       FTLCONF_dns_dnssec: true
       FTLCONF_dns_blocking_active: true
       FTLCONF_dns_rateLimit_count: 1200
+      FTLCONF_misc_dnsmasq_lines: 'shared-network=eth0,${PIHOLE_LAN_IP};dhcp-option=option:dns-server,${PIHOLE_LAN_IP}'
       FTLCONF_webserver_domain: ${SERVER_HOSTNAME}
       FTLCONF_webserver_port: +44353s
       FTLCONF_webserver_session_timeout: 2592000
@@ -67,6 +68,7 @@ services:
       pihole:
         condition: service_healthy
     image: homeall/dhcphelper:latest
+    privileged: true
     environment:
       IP: 172.28.0.3
       TZ: 'Europe/Lisbon'
@@ -117,6 +119,7 @@ services:
     environment:
       - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+      - DNS_API=${DNS_API}
     volumes:
       - '/etc/letsencrypt:/etc/letsencrypt'
       - '/var/www/certbot:/var/www/certbot'

@@ -3,6 +3,22 @@ set -e
 
 readonly HOSTINGER_API_BASE="https://developers.hostinger.com"
 readonly IPV4_REGEX='^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$'
+readonly DNS_RESOLVER="1.1.1.2"
+
+cf_curl() {
+    local url="${@: -1}"
+    local host=${url#https://}
+    host=${host#http://}
+    host=${host%%/*}
+    host=${host%%:*}
+    local ip
+    ip=$(dig +short "$host" @"$DNS_RESOLVER" A 2>/dev/null | grep -E '^[0-9.]+$' | head -1)
+    if [[ -n "$ip" ]]; then
+        curl --resolve "${host}:443:${ip}" "${@:1:$#-1}" "$url"
+    else
+        curl "$@"
+    fi
+}
 
 if [[ -z "${DNS_API:-}" ]]; then
     echo "DNS_API not set, skipping Hostinger DNS record update" >&2
@@ -15,10 +31,10 @@ if [[ -z "${SERVER_HOSTNAME:-}" ]]; then
 fi
 
 echo "Getting public IP..."
-public_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || \
-            curl -s --max-time 5 https://ifconfig.me 2>/dev/null || \
-            curl -s --max-time 5 https://icanhazip.com 2>/dev/null || \
-            curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null)
+public_ip=$(cf_curl -s --max-time 5 https://api.ipify.org 2>/dev/null || \
+            cf_curl -s --max-time 5 https://ifconfig.me 2>/dev/null || \
+            cf_curl -s --max-time 5 https://icanhazip.com 2>/dev/null || \
+            cf_curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null)
 
 if [[ ! "$public_ip" =~ $IPV4_REGEX ]]; then
     echo "Error: Failed to get public IP" >&2
@@ -26,7 +42,7 @@ if [[ ! "$public_ip" =~ $IPV4_REGEX ]]; then
 fi
 
 echo "Fetching DNS records..."
-records_response=$(curl -s -w "\n%{http_code}" \
+records_response=$(cf_curl -s -w "\n%{http_code}" \
     -H "Authorization: Bearer ${DNS_API}" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
@@ -62,7 +78,7 @@ if [[ -n "$current_ip" ]]; then
     if [[ "$current_ip" != "$public_ip" ]]; then
         echo "Updating A record: ${current_ip} -> ${public_ip}"
         json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
-        response=$(curl -s -w "\n%{http_code}" \
+        response=$(cf_curl -s -w "\n%{http_code}" \
             -X PUT \
             -H "Authorization: Bearer ${DNS_API}" \
             -H "Content-Type: application/json" \
@@ -82,7 +98,7 @@ if [[ -n "$current_ip" ]]; then
 else
     echo "Creating A record..."
     json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
-    response=$(curl -s -w "\n%{http_code}" \
+    response=$(cf_curl -s -w "\n%{http_code}" \
         -X PUT \
         -H "Authorization: Bearer ${DNS_API}" \
         -H "Content-Type: application/json" \
