@@ -25,7 +25,7 @@ server {
 
     location ~* /$DOH_PATH_PREFIX {
         proxy_pass http://doh-proxy;
-        include /etc/nginx/common.d/proxy_params.conf;    
+        include /etc/nginx/common.d/proxy_doh.conf;
     }
 
     location / {

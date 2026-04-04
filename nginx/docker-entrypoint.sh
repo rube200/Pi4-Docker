@@ -1,7 +1,10 @@
 #!/bin/sh
 set -e
 
-[ -z "$SERVER_HOSTNAME" ] && echo "Error: SERVER_HOSTNAME is not set and no config file found" >&2 && exit 1
+[ -n "$SERVER_HOSTNAME" ] || {
+    echo "Error: SERVER_HOSTNAME is not set and no config file found" >&2
+    exit 1
+}
 
 readonly SERVER_HOSTNAME_LOWER=$(echo "$SERVER_HOSTNAME" | tr '[:upper:]' '[:lower:]')
 readonly LE_CERT_DIR="/etc/letsencrypt/live/${SERVER_HOSTNAME_LOWER}"

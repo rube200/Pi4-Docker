@@ -1,6 +1,7 @@
 [Interface]
-PrivateKey = PRIVATE_KEY_PLACEHOLDER
 Address = 10.13.13.1/24, fd13:13:13::1/64
-DNS = 172.28.0.3
 ListenPort = 51820
 MTU = 1500
+PostDown = /usr/local/bin/wg-container-firewall.sh down %i
+PostUp = /usr/local/bin/wg-container-firewall.sh up %i
+PrivateKey = PRIVATE_KEY_PLACEHOLDER

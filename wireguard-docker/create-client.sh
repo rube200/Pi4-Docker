@@ -1,23 +1,56 @@
 #!/bin/sh
 set -e
 
-readonly WG_CONF_DIR="/etc/wireguard"
-readonly DEFAULT_WG_CONFIG="wg0.conf"
+readonly WG_CONFIG_DIR="/etc/wireguard"
 readonly DEFAULT_WG_PORT=51820
 readonly DEFAULT_WG_CONTAINER="wireguard"
 
-cd "$WG_CONF_DIR"
+cd "$WG_CONFIG_DIR" || exit 1
 umask 077
 
-WIREGUARD_CONFIG="${WIREGUARD_CONFIG:-$DEFAULT_WG_CONFIG}"
-WIREGUARD_INTERFACE="${WIREGUARD_INTERFACE:-${WIREGUARD_CONFIG%.conf}}"
-SERVER_CONFIG="${WG_CONF_DIR}/${WIREGUARD_CONFIG}"
-SERVER_HOSTNAME="${SERVER_HOSTNAME:-}"
 SERVER_PORT="${WIREGUARD_PORT:-$DEFAULT_WG_PORT}"
 WIREGUARD_CONTAINER="${WIREGUARD_CONTAINER:-$DEFAULT_WG_CONTAINER}"
 
+WG_LIST=$(for _f in wg*.conf; do [ -f "$_f" ] && echo "$_f"; done | sort)
+if [ -z "$WG_LIST" ]; then
+    echo "Error: no wg*.conf found in ${WG_CONFIG_DIR}" >&2
+    exit 1
+fi
+
+WG_COUNT=$(echo "$WG_LIST" | wc -l | tr -d ' \t')
+if [ "$WG_COUNT" -eq 1 ]; then
+    WIREGUARD_CONFIG="$WG_LIST"
+else
+    echo "Available WireGuard server configs:"
+    echo "$WG_LIST" | while IFS= read -r _line; do
+        [ -z "$_line" ] && continue
+        _i=$((_i + 1))
+        echo "  ${_i}) ${_line} ($(basename "$_line" .conf))"
+    done
+    _i=$WG_COUNT
+    while :; do
+        echo -n "Select interface [1-${_i}]: "
+        read -r _sel
+        case "$_sel" in
+            ''|*[!0-9]*)
+                echo "Enter a number between 1 and ${_i}."
+                ;;
+            *)
+                if [ -n "$_sel" ] && [ "$_sel" -ge 1 ] && [ "$_sel" -le "$_i" ]; then
+                    WIREGUARD_CONFIG=$(echo "$WG_LIST" | sed -n "${_sel}p")
+                    break
+                fi
+                echo "Enter a number between 1 and ${_i}."
+                ;;
+        esac
+    done
+fi
+
+WIREGUARD_INTERFACE=$(basename "$WIREGUARD_CONFIG" .conf)
+SERVER_CONFIG="${WG_CONFIG_DIR}/${WIREGUARD_CONFIG}"
+
 if [ ! -r "$SERVER_CONFIG" ]; then
-    echo "Error: Server config $SERVER_CONFIG not found" >&2
+    echo "Error: Server config $SERVER_CONFIG not found or not readable" >&2
     exit 1
 fi
 
@@ -53,6 +86,9 @@ if [ -z "$SERVER_ADDRESS" ]; then
     exit 1
 fi
 
+echo
+echo "Server: ${WIREGUARD_CONFIG} (interface ${WIREGUARD_INTERFACE})"
+
 SUBNET=$(echo "$SERVER_ADDRESS" | cut -d'.' -f1-3)
 if [ -n "$SERVER_ADDRESS6" ]; then
     if echo "$SERVER_ADDRESS6" | grep -q "::"; then
@@ -68,7 +104,7 @@ echo
 echo "Provide a name for the client:"
 read -p "Name: " unsanitized_client
 client=$(echo "$unsanitized_client" | sed 's/[^0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-]/_/g')
-while [ -z "$client" ] || [ -f "${WG_CONF_DIR}/${client}.conf" ]; do
+while [ -z "$client" ] || [ -f "${WG_CONFIG_DIR}/${client}.conf" ]; do
     echo "${client}: Invalid name or already exists."
     read -p "Name: " unsanitized_client
     client=$(echo "$unsanitized_client" | sed 's/[^0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-]/_/g')
@@ -136,7 +172,7 @@ case "$type" in
             if [ -z "$SUBNET6_MASK" ]; then
                 SUBNET6_MASK="64"
             fi
-            AllowedIPs="${AllowedIPs}, ${SUBNET6}::/${SUBNET6_MASK}"
+            AllowedIPs="${AllowedIPs}, ${SUBNET6}/${SUBNET6_MASK}"
         fi
         ;;
 esac
@@ -166,11 +202,7 @@ if [ -n "$client_ip6" ]; then
 else
     echo "Address = ${client_ip}/32" >> "${client}.conf"
 fi
-if [ -n "$SERVER_ADDRESS6" ]; then
-    echo "DNS = ${SERVER_ADDRESS}, ${SERVER_ADDRESS6}" >> "${client}.conf"
-else
-    echo "DNS = ${SERVER_ADDRESS}" >> "${client}.conf"
-fi
+echo "DNS = ${SERVER_ADDRESS}" >> "${client}.conf"
 echo "PrivateKey = ${PRIVATE_KEY}" >> "${client}.conf"
 echo "" >> "${client}.conf"
 echo "[Peer]" >> "${client}.conf"

@@ -15,10 +15,16 @@ case "$ARCH" in
         echo "Use 64-bit Raspberry Pi OS (aarch64) instead." >&2
         exit 1
         ;;
-    *) echo "Error: Unsupported architecture: $ARCH" >&2 && exit 1 ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH" >&2
+        exit 1
+        ;;
 esac
 
-[ -z "$SERVER_HOSTNAME" ] && echo "Error: SERVER_HOSTNAME is not set and no config file found" >&2 && exit 1
+[ -n "$SERVER_HOSTNAME" ] || {
+    echo "Error: SERVER_HOSTNAME is not set and no config file found" >&2
+    exit 1
+}
 
 # Wait for DNS to be ready (to resolve github.com for API calls)
 echo "Waiting for DNS to be ready..."

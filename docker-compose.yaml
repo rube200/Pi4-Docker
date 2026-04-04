@@ -144,9 +144,10 @@ services:
     ports:
       - "51820:51820/udp"
     environment:
-      - WIREGUARD_CONFIG=${WIREGUARD_CONFIG:-wg0.conf}
-      - WIREGUARD_INTERFACE=${WIREGUARD_INTERFACE:-wg0}
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
+      - LOCAL_DNS_IP=${LOCAL_DNS_IP:-172.28.0.3}
+      - LOCAL_ALLOWLIST=${LOCAL_ALLOWLIST:-172.28.0.2,172.28.0.3,172.28.0.4,172.28.0.5}
+      - WG_EGRESS_IFACE=${WG_EGRESS_IFACE:-eth0}
     volumes:
       - '/etc/wireguard:/etc/wireguard'
       - '/lib/modules:/lib/modules:ro'
