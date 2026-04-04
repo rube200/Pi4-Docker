@@ -1,4 +1,4 @@
-FROM alpine:3.23
+FROM alpine:latest
 
 RUN apk add --no-cache bzip2 curl jq tar
 

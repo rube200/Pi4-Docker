@@ -1,4 +1,4 @@
-FROM alpine:3.23
+FROM alpine:latest
 
 RUN apk add --no-cache bind-tools unbound
 

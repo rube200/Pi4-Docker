@@ -1,6 +1,6 @@
-FROM alpine:3.23
+FROM alpine:latest
 
-RUN apk add --no-cache wireguard-tools
+RUN apk add --no-cache dnsmasq wireguard-tools
 
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY healthcheck.sh /usr/local/bin/
