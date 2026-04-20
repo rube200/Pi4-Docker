@@ -22,7 +22,7 @@ services:
     depends_on:
       unbound:
         condition: service_healthy
-    image: pihole/pihole:latest
+    image: pihole/pihole:2026.04.0
     hostname: 'PiHole-Docker'
     ports:
       - "53:53/tcp"
@@ -67,7 +67,7 @@ services:
     depends_on:
       pihole:
         condition: service_healthy
-    image: homeall/dhcphelper:latest
+    image: homeall/dhcphelper:2026.04.06
     privileged: true
     environment:
       IP: 172.28.0.3
