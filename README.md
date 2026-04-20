@@ -6,6 +6,10 @@ Docker Compose stack for a home server: **Unbound** (recursive DNS), **Pi-hole**
 
 **Repository:** https://github.com/rube200/Pi4-Docker
 
+## Support and disclaimer
+
+This repository is **reference configuration** for self-hosting: **no warranty**, **not a security audit**, and **not a supported product**. Operators are responsible for updates, firewall posture, and exposure to the internet. Issues and pull requests are welcome; response time is **best effort** only.
+
 ## Trademarks
 
 This project may reference or display logos for **Pi-hole**, **Home Assistant**, **Kodi**, and similar projects. Those marks belong to their respective owners. This project is **not** affiliated with or endorsed by them.
@@ -68,7 +72,12 @@ These are the **published** mappings from [docker-compose.yaml](docker-compose.y
 
 - **Compose file:** [docker-compose.yaml](docker-compose.yaml) — service graph, fixed bridge network `172.28.0.0/16`, healthchecks, and image tags.
 - **Environment:** [.env.example](.env.example) — copy to `.env` (never commit `.env`).
-- **Nginx:** `nginx/` — templates under `nginx/templates/`, static site under `nginx/html/`.
+- **Nginx:** `nginx/` — templates under `nginx/templates/` (processed at container start), static site under `nginx/html/`. Optional subdomain reverse-proxy samples live under `nginx/examples/` (copy into `nginx/templates/` as `*.conf.template` and rebuild; they are not loaded until you do).
+
+### Landing page: Home Assistant and Kodi (not ready by default)
+
+**Home Assistant and Kodi are placeholders only** in this repository: the compose stack does **not** run those apps, and **no** nginx vhosts for `home-assistant.*` or `kodi.*` are enabled until you add your own `*.conf.template` (see `nginx/examples/`) and something listening behind `proxy_pass`. The landing page tiles stay **disabled** until those subdomains respond. **Pi-hole** is the dashboard wired for typical use once DNS and TLS are in place.
+
 - **WireGuard:** `wireguard-docker/` — server config template; keys can be generated at container start (see `docker-entrypoint.sh`).
 - **Extra automation:** `extra-script/` — optional **Hostinger** DNS helpers (`DNS_API`), Certbot DNS hook, firewall, Pi-hole TLS renewal. **You do not need Hostinger** to run the stack; see below.
 
@@ -158,6 +167,8 @@ Use your real install path instead of `/absolute/path/to/Pi4-Docker`. For **rene
 ## Security
 
 This stack exposes DNS and VPN surfaces to your network and possibly the internet, depending on your firewall and port forwarding. Review `extra-script/firewall-rules.sh` and your host firewall. If you set **`DNS_API`**, treat it like any other **secret** (Hostinger token). WireGuard keys are secrets too. Do not commit `.env`.
+
+To **report a vulnerability in this project** (this repo’s compose, scripts, or shipped integration defaults), follow [SECURITY.md](SECURITY.md).
 
 ## Image versions
 

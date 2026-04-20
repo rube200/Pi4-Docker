@@ -1,0 +1,19 @@
+# Example: reverse-proxy Home Assistant on a subdomain.
+# To enable: copy this file to nginx/templates/ as a name ending in .conf.template
+# (e.g. 07-home-assistant.conf.template), then rebuild the nginx image. At container start,
+# the stock nginx entrypoint runs envsubst and writes /etc/nginx/conf.d/*.conf — same flow
+# as 06-pi-hole.conf.template. $SERVER_HOSTNAME is replaced from the container environment.
+
+server {
+    access_log /var/log/nginx/access_home-assistant.log;
+    error_log /var/log/nginx/error_home-assistant.log;
+
+    include /etc/nginx/common.d/common.conf;
+
+    server_name home-assistant.$SERVER_HOSTNAME;
+
+    location / {
+        proxy_pass http://127.0.0.1:8123;
+        include /etc/nginx/common.d/proxy_params.conf;
+    }
+}

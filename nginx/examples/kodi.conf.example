@@ -1,3 +1,7 @@
+# Example: reverse-proxy an app on a subdomain (originally named kodi).
+# Copy to nginx/templates/ as e.g. 08-kodi.conf.template and rebuild; see home-assistant.conf.example header.
+# Adjust proxy_pass (8123 is Home Assistant’s default; change if your service uses another port).
+
 server {
     access_log /var/log/nginx/access_kodi.log;
     error_log /var/log/nginx/error_kodi.log;
