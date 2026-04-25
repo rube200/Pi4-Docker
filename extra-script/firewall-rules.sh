@@ -25,14 +25,15 @@ fi
 cp "$NFTABLES_CONF" "$TARGET_CONF"
 chmod 644 "$TARGET_CONF"
 
+echo "Flushing previous Pi4-Docker nftables tables..."
+nft delete table inet pi4d_filter 2>/dev/null || true
+nft delete table inet pi4d_nat 2>/dev/null || true
+
+# Do not "systemctl restart nftables" here: on Debian/RPI OS the unit's stop step runs a full
+# ruleset flush, which removes Docker's DOCKER chain / DOCKER-FORWARD. Load with nft -f only.
 echo "Loading nftables rules..."
-systemctl enable nftables.service 2>/dev/null || true
-if ! systemctl restart nftables.service; then
-    echo "Error: systemctl restart nftables.service failed" >&2
-    exit 1
-fi
-if ! systemctl is-active --quiet nftables.service; then
-    echo "Error: nftables.service is not active after restart" >&2
+if ! nft -f "$TARGET_CONF"; then
+    echo "Error: nft -f $TARGET_CONF failed" >&2
     exit 1
 fi
 
