@@ -22,7 +22,7 @@ services:
     depends_on:
       unbound:
         condition: service_healthy
-    image: pihole/pihole:2026.04.0
+    image: pihole/pihole:2026.04.1
     hostname: 'PiHole-Docker'
     ports:
       - "53:53/tcp"

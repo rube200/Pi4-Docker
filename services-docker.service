@@ -2,6 +2,8 @@
 Description=Docker with Services (Unbound, PiHole, DoH, DoT, Nginx and Wireguard)
 Requires=docker.service
 After=docker.service
+Wants=network-online.target
+After=network-online.target
 RequiresMountsFor=/var/run/docker.sock
 
 [Service]
@@ -12,9 +14,9 @@ EnvironmentFile=/opt/Pi4-Docker/.env
 ExecStartPre=/opt/Pi4-Docker/extra-script/update-dns-record-hostinger.sh
 ExecStartPre=/opt/Pi4-Docker/extra-script/renew-pihole-tls.sh
 ExecStartPre=/opt/Pi4-Docker/extra-script/firewall-rules.sh
-ExecStart=/usr/bin/docker compose up -d
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
 ExecStop=/usr/bin/docker compose down
-TimeoutStartSec=0
+TimeoutStartSec=300
 Restart=on-failure
 
 [Install]
