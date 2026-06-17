@@ -1,6 +1,7 @@
-FROM alpine:3.23.4
+FROM alpine:3.24.1
 
-RUN apk add --no-cache bind-tools unbound
+RUN apk upgrade --no-cache \
+    && apk add --no-cache bind-tools unbound
 
 RUN mkdir -p /var/lib/unbound && \
     chown -R unbound:unbound /var/lib/unbound /etc/unbound

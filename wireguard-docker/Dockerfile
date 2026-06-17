@@ -1,6 +1,7 @@
-FROM alpine:3.23.4
+FROM alpine:3.24.1
 
-RUN apk add --no-cache bind-tools iptables wireguard-tools
+RUN apk upgrade --no-cache \
+    && apk add --no-cache bind-tools iptables wireguard-tools
 
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY healthcheck.sh /usr/local/bin/

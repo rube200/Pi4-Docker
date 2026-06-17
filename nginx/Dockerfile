@@ -1,6 +1,7 @@
-FROM nginx:1.31.0-alpine-slim
+FROM nginx:1.31.1-alpine-slim
 
-RUN apk add --no-cache certbot-nginx curl
+RUN apk upgrade --no-cache \
+    && apk add --no-cache certbot-nginx curl
 
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

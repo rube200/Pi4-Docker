@@ -1,6 +1,9 @@
-FROM alpine:3.23.4
+FROM alpine:3.24.1
 
-RUN apk add --no-cache bzip2 curl jq tar
+ENV DOH_PROXY_VERSION=0.9.16
+
+RUN apk upgrade --no-cache \
+    && apk add --no-cache bzip2 curl tar
 
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY healthcheck.sh /usr/local/bin/

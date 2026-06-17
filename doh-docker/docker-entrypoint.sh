@@ -42,29 +42,20 @@ if [ $ATTEMPT -eq $MAX_DNS_ATTEMPTS ]; then
     exit 1
 fi
 
-# Retrieve current binary version
+# Ensure pinned doh-proxy binary is present
+TARGET_VERSION="${DOH_PROXY_VERSION:-}"
+[ -n "$TARGET_VERSION" ] || {
+    echo "Error: DOH_PROXY_VERSION is not set" >&2
+    exit 1
+}
+
 CURRENT_VERSION=""
 if [ -f "$BINARY_PATH" ] && [ -x "$BINARY_PATH" ]; then
     CURRENT_VERSION=$($BINARY_PATH --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
 fi
 
-# Check if binary is up to date or download latest version
-GITHUB_API_RESPONSE=$(curl -sf "https://api.github.com/repos/DNSCrypt/doh-server/releases/latest" 2>&1)
-GITHUB_API_EXIT_CODE=$?
-if [ $GITHUB_API_EXIT_CODE -ne 0 ]; then
-    echo "Error: Failed to fetch latest version from GitHub API (exit code: $GITHUB_API_EXIT_CODE)" >&2
-    echo "Error: Response: $GITHUB_API_RESPONSE" >&2
-    LATEST_VERSION=""
-else
-    LATEST_VERSION=$(echo "$GITHUB_API_RESPONSE" | jq -r '.tag_name' | sed 's/^v//' 2>&1)
-    JQ_EXIT_CODE=$?
-    if [ $JQ_EXIT_CODE -ne 0 ] || [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
-        LATEST_VERSION=""
-    fi
-fi
-
-if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
-    DOWNLOAD_URL="https://github.com/DNSCrypt/doh-server/releases/download/${LATEST_VERSION}/doh-proxy_${LATEST_VERSION}_linux-${ARCH_SUFFIX}.tar.bz2"
+if [ "$CURRENT_VERSION" != "$TARGET_VERSION" ]; then
+    DOWNLOAD_URL="https://github.com/DNSCrypt/doh-server/releases/download/${TARGET_VERSION}/doh-proxy_${TARGET_VERSION}_linux-${ARCH_SUFFIX}.tar.bz2"
     DOWNLOAD_OUTPUT=$(curl -fL -o /tmp/doh-proxy.tar.bz2 "$DOWNLOAD_URL" 2>&1)
     DOWNLOAD_EXIT_CODE=$?
     if [ $DOWNLOAD_EXIT_CODE -eq 0 ]; then
@@ -80,7 +71,7 @@ if [ -n "$LATEST_VERSION" ] && [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
 fi
 
 if [ ! -f "$BINARY_PATH" ]; then
-    echo "Error: Could not fetch latest version and no binary available" >&2
+    echo "Error: Could not download doh-proxy ${TARGET_VERSION} and no binary available" >&2
     exit 1
 fi
 

@@ -46,7 +46,7 @@ These are the **published** mappings from [docker-compose.yaml](docker-compose.y
 
 **Conflicts:** If something else on the host already binds **53** (systemd-resolved, another DNS, etc.), Pi-hole’s publish will fail until that is moved or disabled. **DHCP relay** uses `network_mode: host`; it does not add extra compose `ports:` lines but still participates in broadcast DHCP on the host network stack.
 
-**Architecture note:** The DoH image downloads `doh-proxy` for **x86_64** or **aarch64** only; 32-bit ARM is not supported (see `doh-docker/docker-entrypoint.sh`).
+**Architecture note:** The DoH image downloads a pinned `doh-proxy` release (`DOH_PROXY_VERSION` in `doh-docker/Dockerfile`) for **x86_64** or **aarch64** only; 32-bit ARM is not supported (see `doh-docker/docker-entrypoint.sh`).
 
 ## Quick start
 
