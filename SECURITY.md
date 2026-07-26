@@ -16,4 +16,4 @@ There is **no bug bounty** and **no SLA** for triage or fixes. Reports are handl
 
 ## After publication
 
-Keep production hosts patched, rotate secrets if they may have been exposed, and review firewall and exposure (WAN vs LAN) against your threat model.
+Keep production hosts patched, rotate secrets if they may have been exposed, and review firewall and exposure (WAN vs LAN) against your threat model. The reference **full public edge**, router forwards, and **per-IP new-flow** rate limits are documented in [README.md](README.md) (Network and ports). Do not forward admin/backends (**44353**, **5335**, **3000**) to the WAN.
