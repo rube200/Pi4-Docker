@@ -37,12 +37,12 @@ if [ -r "$CREATE_CLIENT_IMG" ] && [ ! -r "$CREATE_CLIENT_VOL" ]; then
     cp "$CREATE_CLIENT_IMG" "$CREATE_CLIENT_VOL"
     chmod 755 "$CREATE_CLIENT_VOL"
     sed -i "s|SERVER_IP_OR_HOSTNAME|${SERVER_HOSTNAME}|g" "$CREATE_CLIENT_VOL"
-    chmod +x "$CREATE_CLIENT_VOL"
 fi
 
 {
     printf 'SERVER_HOSTNAME=%s\n' "${SERVER_HOSTNAME}"
     printf 'LOCAL_DNS_IP=%s\n' "${LOCAL_DNS_IP}"
+    printf 'LOCAL_DNS_IPV6=%s\n' "${LOCAL_DNS_IPV6:-}"
     printf 'LOCAL_ALLOWLIST=%s\n' "${LOCAL_ALLOWLIST}"
     printf 'WG_EGRESS_IFACE=%s\n' "${WG_EGRESS_IFACE}"
 } >"${WIREGUARD_FIREWALL_ENV_PATH}.new" && mv "${WIREGUARD_FIREWALL_ENV_PATH}.new" "$WIREGUARD_FIREWALL_ENV_PATH"
@@ -62,7 +62,7 @@ done
 WIREGUARD_INTERFACE_NAMES=$(
     for wg_conf_path in "$WIREGUARD_CONFIG_DIR"/wg*.conf; do
         [ -f "$wg_conf_path" ] || continue
-        echo "$(basename "$wg_conf_path" .conf)"
+        basename "$wg_conf_path" .conf
     done | sort -u | tr '\n' ' '
 )
 
@@ -97,4 +97,5 @@ if [ -z "$WIREGUARD_STARTED_INTERFACES" ]; then
     exit 1
 fi
 
-tail -f /dev/null
+tail -f /dev/null &
+wait $!

@@ -26,13 +26,11 @@ validation_esc=$(printf '%s' "$validation" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
 public_txt_visible() {
     _fqdn="${ACME_CHALLENGE_NAME}.${domain}"
-    _g=""
     _g=$(curl -sS --max-time 8 \
         "https://dns.google/resolve?name=${_fqdn}&type=TXT" 2>/dev/null) || true
     if echo "$_g" | grep -qF "$validation"; then
         return 0
     fi
-    _c=""
     _c=$(curl -sS --max-time 8 \
         -H "Accept: application/dns-json" \
         "https://cloudflare-dns.com/dns-query?name=${_fqdn}&type=TXT" 2>/dev/null) || true

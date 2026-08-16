@@ -8,7 +8,7 @@ server {
     listen 440 ssl;
     listen [::]:440 ssl;
 
-    #Temporary disable http3 since nginx  default docker build does not support it
+    #Temporarily disable http3 since nginx default docker build does not support it
     #listen 440 quic;
     #listen [::]:440 quic;
 

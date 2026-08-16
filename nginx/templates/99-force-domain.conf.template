@@ -2,7 +2,7 @@ server {
     listen 443 ssl default_server;
     listen [::]:443 ssl default_server;
 
-    #Temporary disable http3 since nginx default docker build does not support it
+    #Temporarily disable http3 since nginx default docker build does not support it
     #listen 443 quic default_server;
     #listen [::]:443 quic default_server;
 

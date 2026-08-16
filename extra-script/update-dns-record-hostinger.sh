@@ -74,42 +74,30 @@ for name in "@" "*"; do
     done <<< "$records_list"
 done
 
-if [[ -n "$current_ip" ]]; then
-    if [[ "$current_ip" != "$public_ip" ]]; then
-        echo "Updating A record: ${current_ip} -> ${public_ip}"
-        json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
-        response=$(cf_curl -s -w "\n%{http_code}" \
-            -X PUT \
-            -H "Authorization: Bearer ${DNS_API}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d "$json_payload" \
-            "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
-        http_code=$(echo "$response" | tail -n1)
-        if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
-            echo "Error: Failed to update A record. HTTP $http_code" >&2
-            echo "$response" | sed '$d' >&2
-            exit 1
-        fi
-        echo "A record updated successfully"
-    else
-        echo "A record is up to date (${current_ip})"
-    fi
-else
-    echo "Creating A record..."
-    json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
-    response=$(cf_curl -s -w "\n%{http_code}" \
-        -X PUT \
-        -H "Authorization: Bearer ${DNS_API}" \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d "$json_payload" \
-        "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
-    http_code=$(echo "$response" | tail -n1)
-    if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
-        echo "Error: Failed to create A record. HTTP $http_code" >&2
-        echo "$response" | sed '$d' >&2
-        exit 1
-    fi
-    echo "A record created successfully"
+if [[ "$current_ip" == "$public_ip" ]]; then
+    echo "A record is up to date (${current_ip})"
+    exit 0
 fi
+
+if [[ -n "$current_ip" ]]; then
+    echo "Updating A record: ${current_ip} -> ${public_ip}"
+else
+    echo "Creating A record: ${public_ip}"
+fi
+
+json_payload="{\"overwrite\":true,\"zone\":[{\"name\":\"@\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"},{\"name\":\"*\",\"records\":[{\"content\":\"${public_ip}\"}],\"ttl\":3600,\"type\":\"A\"}]}"
+response=$(cf_curl -s -w "\n%{http_code}" \
+    -X PUT \
+    -H "Authorization: Bearer ${DNS_API}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "$json_payload" \
+    "${HOSTINGER_API_BASE}/api/dns/v1/zones/${SERVER_HOSTNAME}" 2>&1) || true
+
+http_code=$(echo "$response" | tail -n1)
+if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
+    echo "Error: Failed to write A record. HTTP $http_code" >&2
+    echo "$response" | sed '$d' >&2
+    exit 1
+fi
+echo "A record set to ${public_ip}"

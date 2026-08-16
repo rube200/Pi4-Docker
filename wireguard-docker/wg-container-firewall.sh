@@ -60,21 +60,19 @@ MASQUERADE_COMMENT="wg-container-fw-masq-${WIREGUARD_INTERFACE}"
 
 ALLOWLIST_V4=
 ALLOWLIST_V6=
-if [ -n "$LOCAL_ALLOWLIST" ]; then
-    saved_IFS=$IFS
-    IFS=,
-    for allowlist_item in $LOCAL_ALLOWLIST; do
-        IFS=$saved_IFS
-        allowlist_item=$(echo "$allowlist_item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$allowlist_item" ] && continue
-        case "$allowlist_item" in
-            *:*) ALLOWLIST_V6="$ALLOWLIST_V6 $allowlist_item" ;;
-            *) ALLOWLIST_V4="$ALLOWLIST_V4 $allowlist_item" ;;
-        esac
-        IFS=,
-    done
+saved_IFS=$IFS
+IFS=,
+for allowlist_item in $LOCAL_ALLOWLIST; do
     IFS=$saved_IFS
-fi
+    allowlist_item=$(echo "$allowlist_item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ -z "$allowlist_item" ] && continue
+    case "$allowlist_item" in
+        *:*) ALLOWLIST_V6="$ALLOWLIST_V6 $allowlist_item" ;;
+        *) ALLOWLIST_V4="$ALLOWLIST_V4 $allowlist_item" ;;
+    esac
+    IFS=,
+done
+IFS=$saved_IFS
 ALLOWLIST_V4=$(echo "$ALLOWLIST_V4" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
 ALLOWLIST_V6=$(echo "$ALLOWLIST_V6" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
 
@@ -124,34 +122,32 @@ while IFS= read -r config_line_raw || [ -n "$config_line_raw" ]; do
                     echo "WireGuard firewall: IPv4 Address= prefix must be /24 or shorter (/25-/32 are not supported), not /$ipv4_prefix_length ($address_token in $INTERFACE_CONFIG_PATH)." >&2
                     exit 1
                 fi
-                if [ "$ipv4_prefix_length" -ge 1 ] && [ "$ipv4_prefix_length" -le 24 ]; then
-                    ipv4_o1=$(echo "$ipv4_host" | cut -d. -f1)
-                    ipv4_o2=$(echo "$ipv4_host" | cut -d. -f2)
-                    ipv4_o3=$(echo "$ipv4_host" | cut -d. -f3)
-                    ipv4_o4=$(echo "$ipv4_host" | cut -d. -f4)
-                    ipv4_o5=$(echo "$ipv4_host" | cut -d. -f5)
-                    ipv4_parse_err=
-                    for ipv4_octet in "$ipv4_o1" "$ipv4_o2" "$ipv4_o3" "$ipv4_o4"; do
-                        case "$ipv4_octet" in
-                            ''|*[!0-9]*) ipv4_parse_err=1 ;;
-                            0) ;;
-                            0*) ipv4_parse_err=1 ;;
-                        esac
-                    done
-                    [ -n "$ipv4_o5" ] && ipv4_parse_err=1
-                    if [ -n "$ipv4_parse_err" ] || [ "$ipv4_o1" -gt 255 ] || [ "$ipv4_o2" -gt 255 ] || [ "$ipv4_o3" -gt 255 ] || [ "$ipv4_o4" -gt 255 ]; then
-                        echo "WireGuard firewall: invalid IPv4 Address= host $ipv4_host ($INTERFACE_CONFIG_PATH)." >&2
-                        exit 1
-                    fi
-                    ipv4_packed=$(( (ipv4_o1 << 24) | (ipv4_o2 << 16) | (ipv4_o3 << 8) | ipv4_o4 ))
-                    ipv4_hostbits=$((32 - ipv4_prefix_length))
-                    ipv4_net=$(( (ipv4_packed >> ipv4_hostbits) << ipv4_hostbits ))
-                    ipv4_n1=$(( (ipv4_net >> 24) & 255 ))
-                    ipv4_n2=$(( (ipv4_net >> 16) & 255 ))
-                    ipv4_n3=$(( (ipv4_net >> 8) & 255 ))
-                    ipv4_n4=$(( ipv4_net & 255 ))
-                    configured_ipv4_prefixes="$configured_ipv4_prefixes $ipv4_n1.$ipv4_n2.$ipv4_n3.$ipv4_n4/$ipv4_prefix_length"
+                ipv4_o1=$(echo "$ipv4_host" | cut -d. -f1)
+                ipv4_o2=$(echo "$ipv4_host" | cut -d. -f2)
+                ipv4_o3=$(echo "$ipv4_host" | cut -d. -f3)
+                ipv4_o4=$(echo "$ipv4_host" | cut -d. -f4)
+                ipv4_o5=$(echo "$ipv4_host" | cut -d. -f5)
+                ipv4_parse_err=
+                for ipv4_octet in "$ipv4_o1" "$ipv4_o2" "$ipv4_o3" "$ipv4_o4"; do
+                    case "$ipv4_octet" in
+                        ''|*[!0-9]*) ipv4_parse_err=1 ;;
+                        0) ;;
+                        0*) ipv4_parse_err=1 ;;
+                    esac
+                done
+                [ -n "$ipv4_o5" ] && ipv4_parse_err=1
+                if [ -n "$ipv4_parse_err" ] || [ "$ipv4_o1" -gt 255 ] || [ "$ipv4_o2" -gt 255 ] || [ "$ipv4_o3" -gt 255 ] || [ "$ipv4_o4" -gt 255 ]; then
+                    echo "WireGuard firewall: invalid IPv4 Address= host $ipv4_host ($INTERFACE_CONFIG_PATH)." >&2
+                    exit 1
                 fi
+                ipv4_packed=$(( (ipv4_o1 << 24) | (ipv4_o2 << 16) | (ipv4_o3 << 8) | ipv4_o4 ))
+                ipv4_hostbits=$((32 - ipv4_prefix_length))
+                ipv4_net=$(( (ipv4_packed >> ipv4_hostbits) << ipv4_hostbits ))
+                ipv4_n1=$(( (ipv4_net >> 24) & 255 ))
+                ipv4_n2=$(( (ipv4_net >> 16) & 255 ))
+                ipv4_n3=$(( (ipv4_net >> 8) & 255 ))
+                ipv4_n4=$(( ipv4_net & 255 ))
+                configured_ipv4_prefixes="$configured_ipv4_prefixes $ipv4_n1.$ipv4_n2.$ipv4_n3.$ipv4_n4/$ipv4_prefix_length"
                 ;;
             *:*/*)
                 ipv6_address=${address_token%%/*}
@@ -173,10 +169,8 @@ while IFS= read -r config_line_raw || [ -n "$config_line_raw" ]; do
                     echo "WireGuard firewall: IPv6 Address= prefix must be /64 or shorter (/65 and longer are not supported), not /$ipv6_prefix_length ($address_token in $INTERFACE_CONFIG_PATH)." >&2
                     exit 1
                 fi
-                if [ "$ipv6_prefix_length" -ge 1 ] && [ "$ipv6_prefix_length" -le 64 ]; then
-                    ipv6_network_prefix=$(echo "$ipv6_address" | sed 's/::[0-9a-fA-F][0-9a-fA-F]*$/::/')
-                    configured_ipv6_prefixes="$configured_ipv6_prefixes $ipv6_network_prefix/$ipv6_prefix_length"
-                fi
+                ipv6_network_prefix=$(echo "$ipv6_address" | sed 's/::[0-9a-fA-F][0-9a-fA-F]*$/::/')
+                configured_ipv6_prefixes="$configured_ipv6_prefixes $ipv6_network_prefix/$ipv6_prefix_length"
                 ;;
         esac
         IFS=,
@@ -197,39 +191,6 @@ NAT_CHAIN_V6="WGNAT6-$WIREGUARD_INTERFACE"
 
 ip6tables_available=0
 command -v ip6tables >/dev/null 2>&1 && ip6tables_available=1
-
-hairpin_public_v4=
-hairpin_target_v4=
-
-if command -v dig >/dev/null 2>&1 && [ -n "${SERVER_HOSTNAME}" ]; then
-    for token in $(dig +time=2 +tries=1 +short A "${SERVER_HOSTNAME}" @"${LOCAL_DNS_IP}" 2>/dev/null); do
-        case "$token" in
-            *[!0-9.]*|'') continue ;;
-        esac
-        a=${token%%.*}; rest=${token#*.}
-        [ "$rest" = "$token" ] && continue
-        b=${rest%%.*}; rest=${rest#*.}
-        [ "$rest" = "$b" ] && continue
-        c=${rest%%.*}; d=${rest#*.}
-        case "$d" in *.*|'') continue ;; esac
-        valid=1
-        for oct in "$a" "$b" "$c" "$d"; do
-            case "$oct" in ''|*[!0-9]*) valid=0 ;; esac
-            [ "$oct" -gt 255 ] 2>/dev/null && valid=0
-        done
-        [ "$valid" -eq 1 ] || continue
-        hairpin_public_v4=$token
-        break
-    done
-fi
-
-if command -v ip >/dev/null 2>&1; then
-    gw=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')
-    case "$gw" in
-        *[!0-9.]*|'') ;;
-        *) hairpin_target_v4=$gw ;;
-    esac
-fi
 
 case "$ACTION" in
 up)
@@ -300,6 +261,39 @@ up)
                     --to-destination "${LOCAL_DNS_IP}:53"
             done
         done
+
+        hairpin_public_v4=
+        hairpin_target_v4=
+
+        if command -v dig >/dev/null 2>&1; then
+            for token in $(dig +time=2 +tries=1 +short A "${SERVER_HOSTNAME}" @"${LOCAL_DNS_IP}" 2>/dev/null); do
+                case "$token" in
+                    *[!0-9.]*|'') continue ;;
+                esac
+                a=${token%%.*}; rest=${token#*.}
+                [ "$rest" = "$token" ] && continue
+                b=${rest%%.*}; rest=${rest#*.}
+                [ "$rest" = "$b" ] && continue
+                c=${rest%%.*}; d=${rest#*.}
+                case "$d" in *.*|'') continue ;; esac
+                valid=1
+                for oct in "$a" "$b" "$c" "$d"; do
+                    case "$oct" in ''|*[!0-9]*) valid=0 ;; esac
+                    [ "$oct" -gt 255 ] 2>/dev/null && valid=0
+                done
+                [ "$valid" -eq 1 ] || continue
+                hairpin_public_v4=$token
+                break
+            done
+        fi
+
+        if command -v ip >/dev/null 2>&1; then
+            gw=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')
+            case "$gw" in
+                *[!0-9.]*|'') ;;
+                *) hairpin_target_v4=$gw ;;
+            esac
+        fi
 
         if [ -n "$hairpin_public_v4" ] && [ -n "$hairpin_target_v4" ]; then
             $IPT -t nat -C "$NAT_CHAIN_V4" -d "$hairpin_public_v4" -j DNAT --to-destination "$hairpin_target_v4" 2>/dev/null \

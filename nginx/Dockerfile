@@ -1,12 +1,9 @@
 FROM nginx:1.31.3-alpine-slim
 
 RUN apk upgrade --no-cache \
-    && apk add --no-cache certbot-nginx curl
-
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-RUN rm -rf /usr/share/nginx/html/*
+    && apk add --no-cache certbot-nginx \
+    && rm -rf /usr/share/nginx/html/* \
+    && mkdir -p /etc/nginx/ssl /var/www/certbot /var/cache/nginx/proxy
 
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY conf.d/ /etc/nginx/conf.d/
@@ -16,10 +13,7 @@ COPY templates/ /etc/nginx/templates/
 
 COPY html/ /usr/share/nginx/html/
 
-RUN mkdir -p /etc/nginx/ssl /var/www/certbot /var/cache/nginx/proxy /docker-entrypoint.d
-
-COPY docker-entrypoint.sh /docker-entrypoint.d/10-cert-renewal.sh
-RUN chmod +x /docker-entrypoint.d/10-cert-renewal.sh
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.d/10-cert-renewal.sh
 
 EXPOSE 80 440 443 853
 

@@ -67,7 +67,7 @@ services:
     depends_on:
       pihole:
         condition: service_healthy
-    image: homeall/dhcphelper:2026.07.06
+    image: homeall/dhcphelper:2026.08.03
     privileged: true
     environment:
       IP: 172.28.0.3
@@ -146,6 +146,7 @@ services:
     environment:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - LOCAL_DNS_IP=${LOCAL_DNS_IP:-172.28.0.3}
+      - LOCAL_DNS_IPV6=${LOCAL_DNS_IPV6:-}
       - LOCAL_ALLOWLIST=${LOCAL_ALLOWLIST:-172.28.0.1,172.28.0.2,172.28.0.3,172.28.0.4,172.28.0.5}
       - WG_EGRESS_IFACE=${WG_EGRESS_IFACE:-eth0}
     volumes:

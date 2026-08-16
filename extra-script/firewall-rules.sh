@@ -27,7 +27,6 @@ chmod 644 "$TARGET_CONF"
 
 echo "Flushing previous Pi4-Docker nftables tables..."
 nft delete table inet pi4d_filter 2>/dev/null || true
-nft delete table inet pi4d_nat 2>/dev/null || true
 
 # Do not "systemctl restart nftables" here: on Debian/RPI OS the unit's stop step runs a full
 # ruleset flush, which removes Docker's DOCKER chain / DOCKER-FORWARD. Load with nft -f only.

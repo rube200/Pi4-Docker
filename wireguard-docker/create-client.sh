@@ -5,6 +5,14 @@ readonly WG_CONFIG_DIR="/etc/wireguard"
 readonly DEFAULT_WG_PORT=51820
 readonly DEFAULT_WG_CONTAINER="wireguard"
 
+wg_pubkey() {
+    if [ "$WG_CMD" = "wg" ]; then
+        wg pubkey
+    else
+        docker exec -i "$WIREGUARD_CONTAINER" wg pubkey
+    fi
+}
+
 cd "$WG_CONFIG_DIR" || exit 1
 umask 077
 
@@ -63,22 +71,27 @@ else
     exit 1
 fi
 
-if [ "$WG_CMD" = "wg" ]; then
-    SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | wg pubkey)
-else
-    SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | docker exec -i "${WIREGUARD_CONTAINER}" wg pubkey)
-fi
+SERVER_PUBLIC_KEY=$(grep "^PrivateKey" "$SERVER_CONFIG" | awk '{print $3}' | wg_pubkey)
 if [ -z "$SERVER_PUBLIC_KEY" ]; then
     echo "Error: Could not extract server public key from $SERVER_CONFIG" >&2
     exit 1
 fi
 
 ADDRESS_LINE=$(grep "^Address" "$SERVER_CONFIG" | head -1)
-SERVER_ADDRESS=$(echo "$ADDRESS_LINE" | awk '{print $3}' | cut -d',' -f1 | cut -d'/' -f1)
+
+SERVER_ADDRESS_CIDR=$(echo "$ADDRESS_LINE" | awk '{print $3}' | cut -d',' -f1)
+SERVER_ADDRESS=${SERVER_ADDRESS_CIDR%%/*}
+SERVER_MASK=${SERVER_ADDRESS_CIDR#*/}
+[ "$SERVER_MASK" = "$SERVER_ADDRESS_CIDR" ] && SERVER_MASK=24
+
 if echo "$ADDRESS_LINE" | grep -q ","; then
-    SERVER_ADDRESS6=$(echo "$ADDRESS_LINE" | awk '{print $4}' | cut -d'/' -f1)
+    SERVER_ADDRESS6_CIDR=$(echo "$ADDRESS_LINE" | awk '{print $4}')
+    SERVER_ADDRESS6=${SERVER_ADDRESS6_CIDR%%/*}
+    SERVER_MASK6=${SERVER_ADDRESS6_CIDR#*/}
+    [ "$SERVER_MASK6" = "$SERVER_ADDRESS6_CIDR" ] && SERVER_MASK6=64
 else
     SERVER_ADDRESS6=""
+    SERVER_MASK6=64
 fi
 
 if [ -z "$SERVER_ADDRESS" ]; then
@@ -111,23 +124,26 @@ while [ -z "$client" ] || [ -f "${WG_CONFIG_DIR}/${client}.conf" ]; do
 done
 
 max_count=1
-if [ -r "$SERVER_CONFIG" ]; then
-    while IFS= read -r line; do
-        ip=$(echo "$line" | sed -n 's/.*AllowedIPs = \([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p')
-        if [ -n "$ip" ]; then
-            last_octet=$(echo "$ip" | cut -d'.' -f4)
-            if [ "$last_octet" -ge 2 ] && [ "$last_octet" -le 254 ] && [ "$last_octet" -gt "$max_count" ]; then
-                max_count=$last_octet
-            fi
+while IFS= read -r line; do
+    ip=$(echo "$line" | sed -n 's/.*AllowedIPs = \([0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p')
+    if [ -n "$ip" ]; then
+        last_octet=$(echo "$ip" | cut -d'.' -f4)
+        if [ "$last_octet" -ge 2 ] && [ "$last_octet" -le 254 ] && [ "$last_octet" -gt "$max_count" ]; then
+            max_count=$last_octet
         fi
-    done <<EOF
+    fi
+done <<EOF
 $(grep "^AllowedIPs = " "$SERVER_CONFIG")
 EOF
-fi
 
+SERVER_OCTET=${SERVER_ADDRESS##*.}
 count=$((max_count + 1))
-if [ "$count" -lt 2 ] || [ "$count" -gt 254 ]; then
-    echo "Error: Could not find a valid IP address (next would be ${count}, must be 2-254)" >&2
+while [ "$count" = "$SERVER_OCTET" ]; do
+    count=$((count + 1))
+done
+
+if [ "$count" -gt 254 ]; then
+    echo "Error: Could not find a valid IP address (next would be ${count}, must be at most 254)" >&2
     exit 1
 fi
 
@@ -162,27 +178,15 @@ case "$type" in
         fi
         ;;
     2)
-        SUBNET_MASK=$(echo "$SERVER_ADDRESS" | cut -d'/' -f2)
-        if [ -z "$SUBNET_MASK" ]; then
-            SUBNET_MASK="24"
-        fi
-        AllowedIPs="${SUBNET}.0/${SUBNET_MASK}"
+        AllowedIPs="${SUBNET}.0/${SERVER_MASK}"
         if [ -n "$client_ip6" ]; then
-            SUBNET6_MASK=$(echo "$SERVER_ADDRESS6" | cut -d'/' -f2)
-            if [ -z "$SUBNET6_MASK" ]; then
-                SUBNET6_MASK="64"
-            fi
-            AllowedIPs="${AllowedIPs}, ${SUBNET6}/${SUBNET6_MASK}"
+            AllowedIPs="${AllowedIPs}, ${SUBNET6}/${SERVER_MASK6}"
         fi
         ;;
 esac
 
 PRIVATE_KEY=$($WG_CMD genkey)
-if [ "$WG_CMD" = "wg" ]; then
-    PUBLIC_KEY=$(echo "$PRIVATE_KEY" | wg pubkey)
-else
-    PUBLIC_KEY=$(echo "$PRIVATE_KEY" | docker exec -i "${WIREGUARD_CONTAINER}" wg pubkey)
-fi
+PUBLIC_KEY=$(echo "$PRIVATE_KEY" | wg_pubkey)
 PRESHARED_KEY=$($WG_CMD genpsk)
 
 echo "" >> "$SERVER_CONFIG"
