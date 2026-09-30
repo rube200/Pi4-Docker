@@ -1,4 +1,4 @@
-FROM nginx:1.31.3-alpine-slim
+FROM nginx:1.31.6-alpine-slim
 
 RUN apk upgrade --no-cache \
     && apk add --no-cache certbot-nginx \

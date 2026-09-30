@@ -1,6 +1,6 @@
-FROM alpine:3.24.1
+FROM alpine:3.24.2
 
-ENV DOH_PROXY_VERSION=0.9.16
+ENV DOH_PROXY_VERSION=0.10.0
 
 RUN apk upgrade --no-cache \
     && apk add --no-cache curl
