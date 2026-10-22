@@ -1,4 +1,4 @@
-FROM alpine:3.24.2
+FROM alpine:3.24.3
 
 RUN apk upgrade --no-cache \
     && apk add --no-cache bind-tools ip6tables iptables wireguard-tools
