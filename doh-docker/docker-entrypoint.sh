@@ -15,7 +15,7 @@ readonly BINARY_PATH="/usr/local/bin/doh-proxy"
 }
 
 DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-consulta-dns}"
-DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-440}"
+DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-8443}"
 DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-172.28.0.3:53}"
 
 echo "Starting doh-server..."

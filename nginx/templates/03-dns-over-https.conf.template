@@ -5,12 +5,12 @@ upstream doh-proxy {
 }
 
 server {
-    listen 440 ssl;
-    listen [::]:440 ssl;
+    listen 8443 ssl;
+    listen [::]:8443 ssl;
 
     #Temporarily disable http3 since nginx default docker build does not support it
-    #listen 440 quic;
-    #listen [::]:440 quic;
+    #listen 8443 quic;
+    #listen [::]:8443 quic;
 
     server_name $SERVER_HOSTNAME;
 
@@ -34,8 +34,8 @@ server {
 }
 
 server {
-    listen 440 ssl default_server;
-    listen [::]:440 ssl default_server;
+    listen 8443 ssl default_server;
+    listen [::]:8443 ssl default_server;
 
     server_name _;
 

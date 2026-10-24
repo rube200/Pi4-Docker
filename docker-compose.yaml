@@ -90,7 +90,7 @@ services:
       - SERVER_HOSTNAME=${SERVER_HOSTNAME}
       - DOH_UPSTREAM_DNS=${DOH_UPSTREAM_DNS:-172.28.0.3:53}
       - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
-      - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-440}
+      - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-8443}
     networks:
       services_network:
         ipv4_address: 172.28.0.4
@@ -114,7 +114,7 @@ services:
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
-      - "440:440/tcp"
+      - "8443:8443/tcp"
       - "853:853/tcp"
     environment:
       - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
