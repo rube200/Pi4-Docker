@@ -28,13 +28,13 @@ These are the **published** mappings from [docker-compose.yaml](docker-compose.y
 **Exposure patterns (pick what matches you):**
 
 - **LAN-only services:** Keep **Pi-hole admin (44353)** and optional **direct Unbound (5335)** / **DoH backend (3000)** off WAN. Trusted LAN still uses **53** (and local HTTPS) without the WAN rate limits below.
-- **Full public edge (reference setup for this repo):** WireGuard **plus** plain **DNS (53)**, **HTTP/HTTPS (80, 443)**, **DoT (853)**, and **DoH (440)** on the WAN. Aimed at a small trusted group (for example you and a few remote users), not an open public resolver. It **widens your attack surface**—keep the host patched, keep the nftables rate limits, and treat Pi-hole admin as sensitive (prefer LAN or VPN; do not forward **44353**).
+- **Full public edge (reference setup for this repo):** WireGuard **plus** plain **DNS (53)**, **HTTP/HTTPS (80, 443)**, **DoT (853)**, and **DoH (8443)** on the WAN. Aimed at a small trusted group (for example you and a few remote users), not an open public resolver. It **widens your attack surface**—keep the host patched, keep the nftables rate limits, and treat Pi-hole admin as sensitive (prefer LAN or VPN; do not forward **44353**).
 
 **Host firewall (nftables):** Apply with [extra-script/firewall-rules.sh](extra-script/firewall-rules.sh) / [extra-script/nftables.conf](extra-script/nftables.conf).
 
 - **Trusted LAN:** `192.168.0.0/16` and IPv6 ULA/link-local — unlimited on SSH/HTTP/HTTPS/DNS/DoH/DoT.
 - **WAN rate limits:** **per source IP** (separate IPv4/IPv6 dynamic sets, up to **1024** tracked addresses each; idle entries expire after **5m**). `ct state established,related` is accepted **before** these chains, so limits apply mainly to **new** traffic:
-  - **TCP** (80, 443, 440, 853, TCP 53): mostly **new connections** (SYNs). Data on an open session does not re-hit the limiter.
+  - **TCP** (80, 443, 8443, 853, TCP 53): mostly **new connections** (SYNs). Data on an open session does not re-hit the limiter.
   - **UDP 53:** each query often uses a new ephemeral port → effectively a **per-query** cap for plain DNS.
   - **UDP 51820:** mostly **new WireGuard handshakes**; tunnel data after that is established and bypasses the limiter.
 - **Burst:** short spike allowance (token bucket) so a browser opening many connections or a DNS burst at page load is not dropped immediately.
@@ -43,13 +43,13 @@ Defaults are sized for a handful of remote users (about **3–5** people), not a
 
 | Chain | Ports | Per-IP limit | Burst | What it throttles in practice |
 |-------|-------|--------------|-------|------------------------------|
-| `protection_dns` | **53** TCP/UDP, **440**, **853** | **300/minute** | **100** | UDP DNS ≈ queries/min; DoH/DoT ≈ new TLS sessions/min (loose if clients keep connections open). |
+| `protection_dns` | **53** TCP/UDP, **853**, **8443** | **300/minute** | **100** | UDP DNS ≈ queries/min; DoH/DoT ≈ new TLS sessions/min (loose if clients keep connections open). |
 | `protection_ddos` | **80**, **443** | **10/second** | **20** | New HTTP(S) connections/sec; burst covers parallel browser tabs/assets. |
 | `protection_wireguard` | **51820** | **12/minute** | **5** | New handshake attempts/min (reconnect storms / scanners). |
 
 **Not allowed from WAN** (published or listening, but nftables drops untrusted sources): **44353**, **5335**, **3000**, **22**.
 
-**Router port forwarding for the full public edge:** forward **53** (TCP+UDP), **80**, **443**, **440**, **853**, and WireGuard (**51820**) to the Pi. Do **not** forward **44353**, **5335**, or **3000**.
+**Router port forwarding for the full public edge:** forward **53** (TCP+UDP), **80**, **443**, **8443**, **853**, and WireGuard (**51820**) to the Pi. Do **not** forward **44353**, **5335**, or **3000**.
 
 | Host port | Proto | Service | Role |
 |-----------|-------|---------|------|
@@ -57,11 +57,11 @@ Defaults are sized for a handful of remote users (about **3–5** people), not a
 | **44353** | TCP | Pi-hole | Pi-hole web UI and API over **HTTPS** (nginx proxies `https://…/admin` here). |
 | **80** | TCP | Nginx | HTTP (redirect / ACME challenge as configured). |
 | **443** | TCP | Nginx | HTTPS for the main site and vhosts (see `nginx/templates/`). |
-| **440** | TCP | Nginx → DoH | **DNS-over-HTTPS** TLS endpoint; nginx forwards to the `doh` service. Keep **`DOH_PUBLIC_PORT`** in `.env` aligned with this (default `440`). |
+| **8443** | TCP | Nginx → DoH | **DNS-over-HTTPS** TLS endpoint; nginx forwards to the `doh` service. Keep **`DOH_PUBLIC_PORT`** in `.env` aligned with this (default `8443`). |
 | **853** | TCP | Nginx → Pi-hole | **DNS-over-TLS** (stream proxy to Pi-hole’s DNS on the bridge). |
 | **51820** | UDP | WireGuard | VPN listen port inside the container (default **ListenPort** in WireGuard config). |
 | **5335** | TCP, UDP | Unbound | Optional **direct** Unbound on the host (Pi-hole normally uses Unbound on the **internal** Docker network). Often **LAN-only**; expose on WAN only if you intend to run a public resolver. |
-| **3000** | TCP | DoH container | `doh-proxy` listens here; in normal use **clients hit port 440** on nginx. **WAN clients should use 440** (TLS front); **3000** is optional for debugging or internal-only publishing. |
+| **3000** | TCP | DoH container | `doh-proxy` listens here; in normal use **clients hit port 8443** on nginx. **WAN clients should use 8443** (TLS front); **3000** is optional for debugging or internal-only publishing. |
 
 **Conflicts:** If something else on the host already binds **53** (systemd-resolved, another DNS, etc.), Pi-hole’s publish will fail until that is moved or disabled. **DHCP relay** uses `network_mode: host`; it does not add extra compose `ports:` lines but still participates in broadcast DHCP on the host network stack.
 
@@ -185,7 +185,7 @@ Use your real install path instead of `/absolute/path/to/Pi4-Docker`. For **rene
 
 ## Security
 
-This stack’s reference posture is the **full public edge** (DNS **53** + DoH **440** + DoT **853**, plus HTTPS and WireGuard). WAN abuse controls are **per-source IP** nftables rate limits on **new** flows (see Network and ports). Review [extra-script/nftables.conf](extra-script/nftables.conf) and your **router forwards** so exposure matches that section. If you set **`DNS_API`**, treat it like any other **secret** (Hostinger token). WireGuard keys are secrets too. Do not commit `.env`.
+This stack’s reference posture is the **full public edge** (DNS **53** + DoH **8443** + DoT **853**, plus HTTPS and WireGuard). WAN abuse controls are **per-source IP** nftables rate limits on **new** flows (see Network and ports). Review [extra-script/nftables.conf](extra-script/nftables.conf) and your **router forwards** so exposure matches that section. If you set **`DNS_API`**, treat it like any other **secret** (Hostinger token). WireGuard keys are secrets too. Do not commit `.env`.
 
 To **report a vulnerability in this project** (this repo’s compose, scripts, or shipped integration defaults), follow [SECURITY.md](SECURITY.md).
 
