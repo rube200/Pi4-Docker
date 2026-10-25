@@ -1,7 +1,7 @@
 FROM nginx:1.31.8-alpine-slim
 
 RUN apk upgrade --no-cache \
-    && apk add --no-cache certbot-nginx \
+    && apk add --no-cache certbot-nginx curl \
     && rm -rf /usr/share/nginx/html/* \
     && mkdir -p /etc/nginx/ssl /var/www/certbot /var/cache/nginx/proxy
 
