@@ -1,23 +1,23 @@
 [Unit]
-Description=Docker with Services (Unbound, PiHole, DoH, DoT, Nginx and Wireguard)
+Description=Pi4-Docker services (Unbound, Pi-hole, DHCP relays, DoH, DoT, nginx and WireGuard)
 Requires=docker.service
-After=docker.service
 Wants=network-online.target
-After=network-online.target
-RequiresMountsFor=/var/run/docker.sock
+After=docker.service network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/Pi4-Docker
 EnvironmentFile=/opt/Pi4-Docker/.env
-ExecStartPre=/opt/Pi4-Docker/extra-script/update-dns-record-hostinger.sh
-ExecStartPre=/opt/Pi4-Docker/extra-script/renew-pihole-tls.sh
-ExecStartPre=/opt/Pi4-Docker/extra-script/firewall-rules.sh
+ExecStartPre=/bin/sh /opt/Pi4-Docker/host-scripts/firewall-rules.sh
+ExecStartPre=-/bin/sh /opt/Pi4-Docker/host-scripts/ddns-hostinger.sh
+ExecStartPre=/bin/sh /opt/Pi4-Docker/host-scripts/certbot-renew.sh
+ExecStartPre=/bin/sh /opt/Pi4-Docker/host-scripts/pihole-tls-renew.sh
 ExecStart=/usr/bin/docker compose up -d --remove-orphans
 ExecStop=/usr/bin/docker compose down
-TimeoutStartSec=300
 Restart=on-failure
+RestartSec=30s
+TimeoutStartSec=900
 
 [Install]
 WantedBy=multi-user.target

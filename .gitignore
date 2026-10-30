@@ -1,6 +1,14 @@
 # Environment files
-.env
 *.env
-# Explicitly allow .env.example files
-!.env.example
+*.env.*
 !*.env.example
+
+# Editor and OS files
+*.bak
+*.orig
+*.swp
+*~
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db

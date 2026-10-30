@@ -1,0 +1,93 @@
+map "$http_content_type $http_accept" $doh_upstream {
+    default doh-proxy;
+    ~*oblivious-dns-message doh-proxy-odoh;
+}
+
+limit_req_zone $limit_key zone=doh-req:1m rate=20r/s;
+
+upstream doh-proxy {
+    zone doh-proxy 64k;
+
+    server 172.28.0.4:3000;
+    server [fd28::4]:3000;
+
+    keepalive 16;
+}
+
+upstream doh-proxy-odoh {
+    zone doh-proxy-odoh 64k;
+
+    server 172.28.0.4:3000;
+
+    keepalive 16;
+}
+
+server {
+    listen 8443 quic;
+    listen [::]:8443 quic;
+    listen 8443 ssl;
+    listen [::]:8443 ssl;
+
+    server_name $HOST_SERVER_HOSTNAME;
+
+    include /etc/nginx/common.d/ssl.conf;
+    include /etc/nginx/common.d/no-document.conf;
+
+    add_header Alt-Svc 'h3=":8443"; ma=86400' always;
+
+    location = /$DOH_PATH {
+        proxy_pass http://$doh_upstream;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        client_max_body_size 4k;
+        gzip off;
+        limit_req zone=doh-req burst=40 nodelay;
+
+        proxy_buffering off;
+        proxy_connect_timeout 2s;
+        proxy_next_upstream error timeout non_idempotent;
+        proxy_read_timeout 5s;
+        proxy_send_timeout 5s;
+    }
+
+    location = /.well-known/odohconfigs {
+        proxy_pass http://doh-proxy-odoh;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+
+        limit_req zone=doh-req burst=40 nodelay;
+
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+        proxy_send_timeout 5s;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 8443 quic default_server reuseport;
+    listen [::]:8443 quic default_server reuseport;
+    listen 8443 ssl default_server;
+    listen [::]:8443 ssl default_server;
+
+    server_name _;
+
+    include /etc/nginx/common.d/ssl.conf;
+    include /etc/nginx/common.d/no-document.conf;
+
+    add_header Alt-Svc 'h3=":8443"; ma=86400' always;
+
+    return 308 https://$HOST_SERVER_HOSTNAME$request_uri;
+}

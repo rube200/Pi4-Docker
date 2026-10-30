@@ -1,354 +1,347 @@
 #!/bin/sh
 set -e
 
-IPT="iptables -w"
-IP6T="ip6tables -w"
+readonly IPT="iptables -w"
+readonly IP6T="ip6tables -w"
+readonly WG_CONFIG_DIR="/etc/wireguard"
+readonly WG_FIREWALL_ENV="${WG_CONFIG_DIR}/wg-firewall.env"
 
-ACTION=${1-}
-WIREGUARD_INTERFACE=${2-}
+require_var() {
+    if [ -z "$2" ]; then
+        echo "Error: [wg-firewall] $1 is not set in ${WG_FIREWALL_ENV}" >&2
+        exit 1
+    fi
+}
 
-case "$ACTION" in
-    up | down)
-        [ -n "$WIREGUARD_INTERFACE" ] || {
-            echo "WireGuard firewall: interface name is missing (second argument)." >&2
-            exit 1
-        }
-        ;;
+dedup() {
+    printf '%s' "$1" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' '
+}
+
+parse_ipv4() {
+    case "$1" in
+        ''|*[!0-9.]*|.*|*.|*..*) return 1 ;;
+    esac
+    _saved_ifs=$IFS
+    IFS=.
+    set -- $1
+    IFS=$_saved_ifs
+    [ "$#" -eq 4 ] || return 1
+    for _octet in "$@"; do
+        case "$_octet" in
+            0) ;;
+            0*) return 1 ;;
+            *) [ "$_octet" -le 255 ] || return 1 ;;
+        esac
+    done
+    octet1=$1
+    octet2=$2
+    octet3=$3
+    octet4=$4
+}
+
+ACTION=$1
+WIREGUARD_INTERFACE=$2
+
+case "${ACTION}:${WIREGUARD_INTERFACE}" in
+    up:?*|down:?*) ;;
     *)
-        echo "WireGuard firewall: invalid usage." >&2
-        echo "  Expected: $0 up <interface>   (typically from PostUp)" >&2
-        echo "            $0 down <interface> (typically from PostDown)" >&2
+        echo "Error: [wg-firewall] invalid usage" >&2
+        echo "  Usage: $0 up|down <interface>" >&2
         exit 1
         ;;
 esac
 
-WIREGUARD_CONFIG_DIR=/etc/wireguard
-INTERFACE_CONFIG_PATH=$WIREGUARD_CONFIG_DIR/$WIREGUARD_INTERFACE.conf
-FIREWALL_ENV_PATH=$WIREGUARD_CONFIG_DIR/wg-firewall.env
+interface_config_path="${WG_CONFIG_DIR}/${WIREGUARD_INTERFACE}.conf"
 
-[ -f "$INTERFACE_CONFIG_PATH" ] || {
-    echo "WireGuard firewall: interface configuration not found: $INTERFACE_CONFIG_PATH" >&2
+if [ ! -f "$interface_config_path" ]; then
+    echo "Error: [wg-firewall] ${interface_config_path} not found" >&2
     exit 1
-}
-[ -r "$FIREWALL_ENV_PATH" ] || {
-    echo "WireGuard firewall: policy file missing or unreadable: $FIREWALL_ENV_PATH (container entrypoint must create it before WireGuard starts)." >&2
-    exit 1
-}
-. "$FIREWALL_ENV_PATH"
-[ -n "${SERVER_HOSTNAME}" ] || {
-    echo "WireGuard firewall: SERVER_HOSTNAME is not set in $FIREWALL_ENV_PATH (container entrypoint must export it before WireGuard starts)." >&2
-    exit 1
-}
-[ -n "${LOCAL_DNS_IP}" ] || {
-    echo "WireGuard firewall: LOCAL_DNS_IP is not set in $FIREWALL_ENV_PATH (set it in the container environment, e.g. docker-compose)." >&2
-    exit 1
-}
-[ -n "${LOCAL_ALLOWLIST}" ] || {
-    echo "WireGuard firewall: LOCAL_ALLOWLIST is not set in $FIREWALL_ENV_PATH (set it in the container environment, e.g. docker-compose)." >&2
-    exit 1
-}
-[ -n "${WG_EGRESS_IFACE}" ] || {
-    echo "WireGuard firewall: WG_EGRESS_IFACE is not set in $FIREWALL_ENV_PATH (set it in the container environment, e.g. docker-compose)." >&2
-    exit 1
-}
-if [ -n "${LOCAL_DNS_IPV6:-}" ]; then
-    LOCAL_DNS_IPV6=${LOCAL_DNS_IPV6#\[}
-    LOCAL_DNS_IPV6=${LOCAL_DNS_IPV6%\]}
 fi
 
-MASQUERADE_COMMENT="wg-container-fw-masq-${WIREGUARD_INTERFACE}"
+if [ ! -r "$WG_FIREWALL_ENV" ]; then
+    echo "Error: [wg-firewall] ${WG_FIREWALL_ENV} not found" >&2
+    exit 1
+fi
+. "$WG_FIREWALL_ENV"
 
-ALLOWLIST_V4=
-ALLOWLIST_V6=
-saved_IFS=$IFS
-IFS=,
-for allowlist_item in $LOCAL_ALLOWLIST; do
-    IFS=$saved_IFS
-    allowlist_item=$(echo "$allowlist_item" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$allowlist_item" ] && continue
+require_var HOST_LAN_IP6 "$HOST_LAN_IP6"
+require_var HOST_SERVER_HOSTNAME "$HOST_SERVER_HOSTNAME"
+require_var WG_ALLOWLIST "$WG_ALLOWLIST"
+require_var WG_DNS_IP "$WG_DNS_IP"
+require_var WG_DNS_IP6 "$WG_DNS_IP6"
+require_var WG_EGRESS_IFACE "$WG_EGRESS_IFACE"
+require_var WG_FULL_ACCESS_MASK "$WG_FULL_ACCESS_MASK"
+require_var WG_NGINX_IP "$WG_NGINX_IP"
+require_var WG_NGINX_IP6 "$WG_NGINX_IP6"
+
+masquerade_comment="wg-container-fw-masq-${WIREGUARD_INTERFACE}"
+
+allowlist=
+allowlist6=
+for allowlist_item in $(printf '%s' "$WG_ALLOWLIST" | tr ',' ' '); do
     case "$allowlist_item" in
-        *:*) ALLOWLIST_V6="$ALLOWLIST_V6 $allowlist_item" ;;
-        *) ALLOWLIST_V4="$ALLOWLIST_V4 $allowlist_item" ;;
+        *:*) allowlist6="$allowlist6 $allowlist_item" ;;
+        *) allowlist="$allowlist $allowlist_item" ;;
     esac
-    IFS=,
 done
-IFS=$saved_IFS
-ALLOWLIST_V4=$(echo "$ALLOWLIST_V4" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
-ALLOWLIST_V6=$(echo "$ALLOWLIST_V6" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
+allowlist=$(dedup "$allowlist")
+allowlist6=$(dedup "$allowlist6")
 
-configured_ipv4_hosts=
-configured_ipv4_prefixes=
-configured_ipv6_hosts=
-configured_ipv6_prefixes=
+configured_hosts=
+configured_prefixes=
+configured_hosts6=
+configured_prefixes6=
 
 while IFS= read -r config_line_raw || [ -n "$config_line_raw" ]; do
-    config_line_trimmed=$(printf '%s' "$config_line_raw" | tr -d '\r')
-    config_line_trimmed=$(echo "$config_line_trimmed" | sed 's/^[[:space:]]*//')
+    config_line_trimmed=$(printf '%s' "$config_line_raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     case "$config_line_trimmed" in
         \#*) continue ;;
         [Aa][Dd][Dd][Rr][Ee][Ss][Ss][[:space:]]*=*) ;;
         *) continue ;;
     esac
 
-    address_field_value=${config_line_trimmed#*=}
-    address_field_value=$(echo "$address_field_value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$address_field_value" ] && continue
-
-    saved_IFS=$IFS
-    IFS=,
-    for address_token in $address_field_value; do
-        IFS=$saved_IFS
-        address_token=$(echo "$address_token" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        [ -z "$address_token" ] && continue
-
+    for address_token in $(printf '%s' "${config_line_trimmed#*=}" | tr ',' ' '); do
         case "$address_token" in
             *.*.*.*/*)
-                ipv4_host=${address_token%%/*}
-                ipv4_mask_field=${address_token#*/}
-                case "$ipv4_mask_field" in
+                address=${address_token%%/*}
+                mask_field=${address_token#*/}
+                case "$mask_field" in
                     ''|*[!0-9]*)
-                        echo "WireGuard firewall: IPv4 Address= requires a numeric CIDR mask ($address_token in $INTERFACE_CONFIG_PATH)." >&2
+                        echo "Error: [wg-firewall] IPv4 Address= requires a numeric CIDR mask (${address_token} in ${interface_config_path})" >&2
                         exit 1
                         ;;
                 esac
-                ipv4_prefix_length=$(echo "$ipv4_mask_field" | sed 's/^0*//')
-                [ -z "$ipv4_prefix_length" ] && ipv4_prefix_length=0
-                if [ "$ipv4_prefix_length" -eq 0 ]; then
-                    echo "WireGuard firewall: IPv4 Address= prefix length cannot be 0 ($address_token in $INTERFACE_CONFIG_PATH)." >&2
+                prefix_length=$(printf '%s' "$mask_field" | sed 's/^0*//')
+                prefix_length=${prefix_length:-0}
+                if [ "$prefix_length" -eq 0 ]; then
+                    echo "Error: [wg-firewall] IPv4 Address= prefix length cannot be 0 (${address_token} in ${interface_config_path})" >&2
                     exit 1
                 fi
-                configured_ipv4_hosts="$configured_ipv4_hosts $ipv4_host"
-                if [ "$ipv4_prefix_length" -gt 24 ]; then
-                    echo "WireGuard firewall: IPv4 Address= prefix must be /24 or shorter (/25-/32 are not supported), not /$ipv4_prefix_length ($address_token in $INTERFACE_CONFIG_PATH)." >&2
+                if [ "$prefix_length" -gt 24 ]; then
+                    echo "Error: [wg-firewall] IPv4 Address= prefix must be /24 or shorter, not /${prefix_length} (${address_token} in ${interface_config_path})" >&2
                     exit 1
                 fi
-                ipv4_o1=$(echo "$ipv4_host" | cut -d. -f1)
-                ipv4_o2=$(echo "$ipv4_host" | cut -d. -f2)
-                ipv4_o3=$(echo "$ipv4_host" | cut -d. -f3)
-                ipv4_o4=$(echo "$ipv4_host" | cut -d. -f4)
-                ipv4_o5=$(echo "$ipv4_host" | cut -d. -f5)
-                ipv4_parse_err=
-                for ipv4_octet in "$ipv4_o1" "$ipv4_o2" "$ipv4_o3" "$ipv4_o4"; do
-                    case "$ipv4_octet" in
-                        ''|*[!0-9]*) ipv4_parse_err=1 ;;
-                        0) ;;
-                        0*) ipv4_parse_err=1 ;;
-                    esac
-                done
-                [ -n "$ipv4_o5" ] && ipv4_parse_err=1
-                if [ -n "$ipv4_parse_err" ] || [ "$ipv4_o1" -gt 255 ] || [ "$ipv4_o2" -gt 255 ] || [ "$ipv4_o3" -gt 255 ] || [ "$ipv4_o4" -gt 255 ]; then
-                    echo "WireGuard firewall: invalid IPv4 Address= host $ipv4_host ($INTERFACE_CONFIG_PATH)." >&2
+                if ! parse_ipv4 "$address"; then
+                    echo "Error: [wg-firewall] invalid IPv4 Address= host ${address} (${interface_config_path})" >&2
                     exit 1
                 fi
-                ipv4_packed=$(( (ipv4_o1 << 24) | (ipv4_o2 << 16) | (ipv4_o3 << 8) | ipv4_o4 ))
-                ipv4_hostbits=$((32 - ipv4_prefix_length))
-                ipv4_net=$(( (ipv4_packed >> ipv4_hostbits) << ipv4_hostbits ))
-                ipv4_n1=$(( (ipv4_net >> 24) & 255 ))
-                ipv4_n2=$(( (ipv4_net >> 16) & 255 ))
-                ipv4_n3=$(( (ipv4_net >> 8) & 255 ))
-                ipv4_n4=$(( ipv4_net & 255 ))
-                configured_ipv4_prefixes="$configured_ipv4_prefixes $ipv4_n1.$ipv4_n2.$ipv4_n3.$ipv4_n4/$ipv4_prefix_length"
+                configured_hosts="$configured_hosts $address"
+                packed=$(( (octet1 << 24) | (octet2 << 16) | (octet3 << 8) | octet4 ))
+                host_bits=$((32 - prefix_length))
+                network=$(( (packed >> host_bits) << host_bits ))
+                configured_prefixes="$configured_prefixes $(( (network >> 24) & 255 )).$(( (network >> 16) & 255 )).$(( (network >> 8) & 255 )).$(( network & 255 ))/${prefix_length}"
                 ;;
             *:*/*)
-                ipv6_address=${address_token%%/*}
-                ipv6_mask_field=${address_token#*/}
-                case "$ipv6_mask_field" in
+                address6=${address_token%%/*}
+                mask_field6=${address_token#*/}
+                case "$mask_field6" in
                     ''|*[!0-9]*)
-                        echo "WireGuard firewall: IPv6 Address= requires a numeric CIDR mask ($address_token in $INTERFACE_CONFIG_PATH)." >&2
+                        echo "Error: [wg-firewall] IPv6 Address= requires a numeric CIDR mask (${address_token} in ${interface_config_path})" >&2
                         exit 1
                         ;;
                 esac
-                ipv6_prefix_length=$(echo "$ipv6_mask_field" | sed 's/^0*//')
-                [ -z "$ipv6_prefix_length" ] && ipv6_prefix_length=0
-                if [ "$ipv6_prefix_length" -eq 0 ]; then
-                    echo "WireGuard firewall: IPv6 Address= prefix length cannot be 0 ($address_token in $INTERFACE_CONFIG_PATH)." >&2
+                prefix_length6=$(printf '%s' "$mask_field6" | sed 's/^0*//')
+                prefix_length6=${prefix_length6:-0}
+                if [ "$prefix_length6" -eq 0 ]; then
+                    echo "Error: [wg-firewall] IPv6 Address= prefix length cannot be 0 (${address_token} in ${interface_config_path})" >&2
                     exit 1
                 fi
-                configured_ipv6_hosts="$configured_ipv6_hosts $ipv6_address"
-                if [ "$ipv6_prefix_length" -gt 64 ]; then
-                    echo "WireGuard firewall: IPv6 Address= prefix must be /64 or shorter (/65 and longer are not supported), not /$ipv6_prefix_length ($address_token in $INTERFACE_CONFIG_PATH)." >&2
+                if [ "$prefix_length6" -gt 64 ]; then
+                    echo "Error: [wg-firewall] IPv6 Address= prefix must be /64 or shorter, not /${prefix_length6} (${address_token} in ${interface_config_path})" >&2
                     exit 1
                 fi
-                ipv6_network_prefix=$(echo "$ipv6_address" | sed 's/::[0-9a-fA-F][0-9a-fA-F]*$/::/')
-                configured_ipv6_prefixes="$configured_ipv6_prefixes $ipv6_network_prefix/$ipv6_prefix_length"
+                configured_hosts6="$configured_hosts6 $address6"
+                network6=$(printf '%s' "$address6" | sed 's/::[0-9a-fA-F][0-9a-fA-F]*$/::/')
+                configured_prefixes6="$configured_prefixes6 ${network6}/${prefix_length6}"
                 ;;
         esac
-        IFS=,
     done
-    IFS=$saved_IFS
-done <"$INTERFACE_CONFIG_PATH"
+done <"$interface_config_path"
 
-configured_ipv4_hosts=$(echo "$configured_ipv4_hosts" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
-configured_ipv4_prefixes=$(echo "$configured_ipv4_prefixes" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
-configured_ipv6_hosts=$(echo "$configured_ipv6_hosts" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
-configured_ipv6_prefixes=$(echo "$configured_ipv6_prefixes" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
+configured_hosts=$(dedup "$configured_hosts")
+configured_prefixes=$(dedup "$configured_prefixes")
+configured_hosts6=$(dedup "$configured_hosts6")
+configured_prefixes6=$(dedup "$configured_prefixes6")
 
-FILTER_CHAIN_V4="WG4-$WIREGUARD_INTERFACE"
-FILTER_CHAIN_V6="WG6-$WIREGUARD_INTERFACE"
+full_access=
+for host_address in $configured_hosts; do
+    full_access="$full_access ${host_address%.*}.0/${WG_FULL_ACCESS_MASK}"
+done
+full_access6=
+for prefix_cidr6 in $configured_prefixes6; do
+    full_access6="$full_access6 ${prefix_cidr6%%/*}/$((WG_FULL_ACCESS_MASK + 96))"
+done
 
-NAT_CHAIN_V4="WGNAT4-$WIREGUARD_INTERFACE"
-NAT_CHAIN_V6="WGNAT6-$WIREGUARD_INTERFACE"
-
-ip6tables_available=0
-command -v ip6tables >/dev/null 2>&1 && ip6tables_available=1
+filter_chain="WG4-$WIREGUARD_INTERFACE"
+filter_chain6="WG6-$WIREGUARD_INTERFACE"
+nat_chain="WGNAT4-$WIREGUARD_INTERFACE"
+nat_chain6="WGNAT6-$WIREGUARD_INTERFACE"
 
 case "$ACTION" in
-up)
-    wg_has_v4=0
-    wg_has_v6=0
-    [ -n "$configured_ipv4_hosts$configured_ipv4_prefixes$ALLOWLIST_V4" ] && wg_has_v4=1
-    [ -n "$configured_ipv6_hosts$configured_ipv6_prefixes$ALLOWLIST_V6" ] && wg_has_v6=1
+    up)
+        if [ -z "$configured_prefixes" ] || [ -z "$configured_prefixes6" ]; then
+            echo "Error: [wg-firewall] ${interface_config_path} needs an IPv4 and an IPv6 Address" >&2
+            exit 1
+        fi
 
-    if [ "$wg_has_v4" -eq 1 ]; then
-        $IPT -N "$FILTER_CHAIN_V4" 2>/dev/null || $IPT -F "$FILTER_CHAIN_V4"
-        $IPT -A "$FILTER_CHAIN_V4" -p udp -m multiport --dports 67,68 -j DROP
-        for ipv4_prefix_cidr in $configured_ipv4_prefixes; do
-            ipv4_prefix_net=${ipv4_prefix_cidr%%/*}
-            $IPT -A "$FILTER_CHAIN_V4" -d "$ipv4_prefix_cidr" -j ACCEPT
-            $IPT -A "$FILTER_CHAIN_V4" -s "${ipv4_prefix_net}/30" -j ACCEPT
+        public_ip=
+        for token in $(dig +time=2 +tries=1 +short A "$HOST_SERVER_HOSTNAME" @"$WG_DNS_IP" 2>/dev/null); do
+            if parse_ipv4 "$token"; then
+                public_ip=$token
+                break
+            fi
         done
-        for forward_dest in $ALLOWLIST_V4; do
-            $IPT -A "$FILTER_CHAIN_V4" -d "$forward_dest" -j ACCEPT
+        public_ip6=
+        for token in $(dig +time=2 +tries=1 +short AAAA "$HOST_SERVER_HOSTNAME" @"$WG_DNS_IP" 2>/dev/null); do
+            case "$token" in
+                *:*)
+                    public_ip6=$token
+                    break
+                    ;;
+            esac
         done
-        $IPT -A "$FILTER_CHAIN_V4" -p tcp --dport 22 -j DROP
-        $IPT -A "$FILTER_CHAIN_V4" -d 127.0.0.0/8 -j DROP
-        $IPT -A "$FILTER_CHAIN_V4" -d 192.168.0.0/16 -j DROP
-        $IPT -A "$FILTER_CHAIN_V4" -d 172.16.0.0/12 -j DROP
-        $IPT -A "$FILTER_CHAIN_V4" -d 10.0.0.0/8 -j DROP
-        $IPT -A "$FILTER_CHAIN_V4" -j ACCEPT
+        host_gateway=$(ip route show default 2>/dev/null | awk '{print $3; exit}')
 
+        $IPT -N "$filter_chain" 2>/dev/null || $IPT -F "$filter_chain"
+        $IPT -A "$filter_chain" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        $IPT -A "$filter_chain" -p udp -m multiport --dports 67,68 -j DROP
+        for full_access_cidr in $full_access; do
+            $IPT -A "$filter_chain" -s "$full_access_cidr" -j ACCEPT
+        done
+        for prefix_cidr in $configured_prefixes; do
+            $IPT -A "$filter_chain" -d "$prefix_cidr" -j DROP
+        done
+        for proto in tcp udp; do
+            $IPT -A "$filter_chain" -d "$WG_DNS_IP" -p "$proto" --dport 53 -j ACCEPT
+        done
+        for forward_dest in $allowlist; do
+            $IPT -A "$filter_chain" -d "$forward_dest" -j ACCEPT
+        done
+        $IPT -A "$filter_chain" -d 127.0.0.0/8 -j DROP
+        $IPT -A "$filter_chain" -d 10.0.0.0/8 -j DROP
+        $IPT -A "$filter_chain" -d 169.254.0.0/16 -j DROP
+        $IPT -A "$filter_chain" -d 172.16.0.0/12 -j DROP
+        $IPT -A "$filter_chain" -d 192.168.0.0/16 -j DROP
+        $IPT -A "$filter_chain" -j ACCEPT
+
+        $IPT -C FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain" 2>/dev/null \
+            || $IPT -A FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain"
         $IPT -C FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null \
             || $IPT -A FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT
-        $IPT -C FORWARD -i "$WIREGUARD_INTERFACE" -j "$FILTER_CHAIN_V4" 2>/dev/null \
-            || $IPT -A FORWARD -i "$WIREGUARD_INTERFACE" -j "$FILTER_CHAIN_V4"
-    fi
 
-    if [ "$ip6tables_available" -eq 1 ] && [ "$wg_has_v6" -eq 1 ]; then
-        $IP6T -N "$FILTER_CHAIN_V6" 2>/dev/null || $IP6T -F "$FILTER_CHAIN_V6"
-        $IP6T -A "$FILTER_CHAIN_V6" -p udp -m multiport --dports 546,547 -j DROP
-        for ipv6_prefix_cidr in $configured_ipv6_prefixes; do
-            ipv6_prefix_net=${ipv6_prefix_cidr%%/*}
-            $IP6T -A "$FILTER_CHAIN_V6" -d "$ipv6_prefix_cidr" -j ACCEPT
-            $IP6T -A "$FILTER_CHAIN_V6" -s "${ipv6_prefix_net}/126" -j ACCEPT
-        done
-        for forward_dest in $ALLOWLIST_V6; do
-            $IP6T -A "$FILTER_CHAIN_V6" -d "$forward_dest" -j ACCEPT
-        done
-        $IP6T -A "$FILTER_CHAIN_V6" -p tcp --dport 22 -j DROP
-        $IP6T -A "$FILTER_CHAIN_V6" -d ::1/128 -j DROP
-        $IP6T -A "$FILTER_CHAIN_V6" -d fc00::/7 -j DROP
-        $IP6T -A "$FILTER_CHAIN_V6" -d fe80::/10 -j DROP
-        $IP6T -A "$FILTER_CHAIN_V6" -j ACCEPT
+        $IPT -t mangle -C FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+            || $IPT -t mangle -A FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 
+        $IP6T -N "$filter_chain6" 2>/dev/null || $IP6T -F "$filter_chain6"
+        $IP6T -A "$filter_chain6" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        $IP6T -A "$filter_chain6" -p udp -m multiport --dports 546,547 -j DROP
+        for full_access_cidr in $full_access6; do
+            $IP6T -A "$filter_chain6" -s "$full_access_cidr" -j ACCEPT
+        done
+        for prefix_cidr6 in $configured_prefixes6; do
+            $IP6T -A "$filter_chain6" -d "$prefix_cidr6" -j DROP
+        done
+        for proto in tcp udp; do
+            $IP6T -A "$filter_chain6" -d "$WG_DNS_IP6" -p "$proto" --dport 53 -j ACCEPT
+        done
+        for forward_dest in $allowlist6; do
+            $IP6T -A "$filter_chain6" -d "$forward_dest" -j ACCEPT
+        done
+        $IP6T -A "$filter_chain6" -d ::1/128 -j DROP
+        $IP6T -A "$filter_chain6" -d fc00::/7 -j DROP
+        $IP6T -A "$filter_chain6" -d fe80::/10 -j DROP
+        $IP6T -A "$filter_chain6" -d "${HOST_LAN_IP6}/64" -j DROP
+        if [ -n "$public_ip6" ]; then
+            $IP6T -A "$filter_chain6" -d "${public_ip6}/64" -j DROP
+            $IP6T -A "$filter_chain6" -j ACCEPT
+        else
+            $IP6T -A "$filter_chain6" -j DROP
+        fi
+
+        $IP6T -C FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain6" 2>/dev/null \
+            || $IP6T -A FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain6"
         $IP6T -C FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null \
             || $IP6T -A FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT
-        $IP6T -C FORWARD -i "$WIREGUARD_INTERFACE" -j "$FILTER_CHAIN_V6" 2>/dev/null \
-            || $IP6T -A FORWARD -i "$WIREGUARD_INTERFACE" -j "$FILTER_CHAIN_V6"
-    fi
 
-    if [ "$wg_has_v4" -eq 1 ]; then
-        $IPT -t nat -N "$NAT_CHAIN_V4" 2>/dev/null || $IPT -t nat -F "$NAT_CHAIN_V4"
-        $IPT -t nat -C PREROUTING -i "$WIREGUARD_INTERFACE" -j "$NAT_CHAIN_V4" 2>/dev/null \
-            || $IPT -t nat -A PREROUTING -i "$WIREGUARD_INTERFACE" -j "$NAT_CHAIN_V4"
-        $IPT -t nat -C POSTROUTING -o "$WG_EGRESS_IFACE" -m comment --comment "$MASQUERADE_COMMENT" -j MASQUERADE 2>/dev/null \
-            || $IPT -t nat -A POSTROUTING -o "$WG_EGRESS_IFACE" -m comment --comment "$MASQUERADE_COMMENT" -j MASQUERADE
+        $IP6T -t mangle -C FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+            || $IP6T -t mangle -A FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 
-        for dns_client_ipv4 in $configured_ipv4_hosts; do
-            for proto in udp tcp; do
-                $IPT -t nat -C "$NAT_CHAIN_V4" -d "$dns_client_ipv4" -p "$proto" --dport 53 -j DNAT \
-                    --to-destination "${LOCAL_DNS_IP}:53" 2>/dev/null \
-                    || $IPT -t nat -A "$NAT_CHAIN_V4" -d "$dns_client_ipv4" -p "$proto" --dport 53 -j DNAT \
-                    --to-destination "${LOCAL_DNS_IP}:53"
+        $IPT -t nat -N "$nat_chain" 2>/dev/null || $IPT -t nat -F "$nat_chain"
+        $IPT -t nat -C PREROUTING -i "$WIREGUARD_INTERFACE" -j "$nat_chain" 2>/dev/null \
+            || $IPT -t nat -A PREROUTING -i "$WIREGUARD_INTERFACE" -j "$nat_chain"
+        for prefix_cidr in $configured_prefixes; do
+            $IPT -t nat -C POSTROUTING -s "$prefix_cidr" -o "$WG_EGRESS_IFACE" -m comment --comment "$masquerade_comment" -j MASQUERADE 2>/dev/null \
+                || $IPT -t nat -A POSTROUTING -s "$prefix_cidr" -o "$WG_EGRESS_IFACE" -m comment --comment "$masquerade_comment" -j MASQUERADE
+        done
+
+        for dns_client in $configured_hosts; do
+            for proto in tcp udp; do
+                $IPT -t nat -A "$nat_chain" -d "$dns_client" -p "$proto" --dport 53 -j DNAT --to-destination "${WG_DNS_IP}:53"
             done
         done
 
-        hairpin_public_v4=
-        hairpin_target_v4=
-
-        if command -v dig >/dev/null 2>&1; then
-            for token in $(dig +time=2 +tries=1 +short A "${SERVER_HOSTNAME}" @"${LOCAL_DNS_IP}" 2>/dev/null); do
-                case "$token" in
-                    *[!0-9.]*|'') continue ;;
-                esac
-                a=${token%%.*}; rest=${token#*.}
-                [ "$rest" = "$token" ] && continue
-                b=${rest%%.*}; rest=${rest#*.}
-                [ "$rest" = "$b" ] && continue
-                c=${rest%%.*}; d=${rest#*.}
-                case "$d" in *.*|'') continue ;; esac
-                valid=1
-                for oct in "$a" "$b" "$c" "$d"; do
-                    case "$oct" in ''|*[!0-9]*) valid=0 ;; esac
-                    [ "$oct" -gt 255 ] 2>/dev/null && valid=0
-                done
-                [ "$valid" -eq 1 ] || continue
-                hairpin_public_v4=$token
-                break
+        if [ -n "$public_ip" ] && parse_ipv4 "$host_gateway"; then
+            for full_access_cidr in $full_access; do
+                $IPT -t nat -A "$nat_chain" -s "$full_access_cidr" -d "$public_ip" -j DNAT --to-destination "$host_gateway"
             done
-        fi
-
-        if command -v ip >/dev/null 2>&1; then
-            gw=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')
-            case "$gw" in
-                *[!0-9.]*|'') ;;
-                *) hairpin_target_v4=$gw ;;
-            esac
-        fi
-
-        if [ -n "$hairpin_public_v4" ] && [ -n "$hairpin_target_v4" ]; then
-            $IPT -t nat -C "$NAT_CHAIN_V4" -d "$hairpin_public_v4" -j DNAT --to-destination "$hairpin_target_v4" 2>/dev/null \
-                || $IPT -t nat -A "$NAT_CHAIN_V4" -d "$hairpin_public_v4" -j DNAT --to-destination "$hairpin_target_v4"
+            $IPT -t nat -A "$nat_chain" -d "$public_ip" -j DNAT --to-destination "$WG_NGINX_IP"
         else
-            echo "WireGuard hairpin: failed to resolve public IP from SERVER_HOSTNAME or host gateway IP." >&2
+            echo "Warning: [wg-firewall] failed to resolve the public IPv4 of HOST_SERVER_HOSTNAME or the host gateway" >&2
         fi
-    fi
 
-    if [ "$ip6tables_available" -eq 1 ] && [ "$wg_has_v6" -eq 1 ]; then
-        $IP6T -t nat -N "$NAT_CHAIN_V6" 2>/dev/null || $IP6T -t nat -F "$NAT_CHAIN_V6"
-        $IP6T -t nat -C PREROUTING -i "$WIREGUARD_INTERFACE" -j "$NAT_CHAIN_V6" 2>/dev/null \
-            || $IP6T -t nat -A PREROUTING -i "$WIREGUARD_INTERFACE" -j "$NAT_CHAIN_V6"
-        $IP6T -t nat -C POSTROUTING -o "$WG_EGRESS_IFACE" -m comment --comment "$MASQUERADE_COMMENT" -j MASQUERADE 2>/dev/null \
-            || $IP6T -t nat -A POSTROUTING -o "$WG_EGRESS_IFACE" -m comment --comment "$MASQUERADE_COMMENT" -j MASQUERADE
+        $IP6T -t nat -N "$nat_chain6" 2>/dev/null || $IP6T -t nat -F "$nat_chain6"
+        $IP6T -t nat -C PREROUTING -i "$WIREGUARD_INTERFACE" -j "$nat_chain6" 2>/dev/null \
+            || $IP6T -t nat -A PREROUTING -i "$WIREGUARD_INTERFACE" -j "$nat_chain6"
+        for prefix_cidr6 in $configured_prefixes6; do
+            $IP6T -t nat -C POSTROUTING -s "$prefix_cidr6" -o "$WG_EGRESS_IFACE" -m comment --comment "$masquerade_comment" -j MASQUERADE 2>/dev/null \
+                || $IP6T -t nat -A POSTROUTING -s "$prefix_cidr6" -o "$WG_EGRESS_IFACE" -m comment --comment "$masquerade_comment" -j MASQUERADE
+        done
 
-        if [ -n "${LOCAL_DNS_IPV6:-}" ]; then
-            for dns_client_ipv6 in $configured_ipv6_hosts; do
-                for proto in udp tcp; do
-                    $IP6T -t nat -C "$NAT_CHAIN_V6" -d "$dns_client_ipv6" -p "$proto" --dport 53 -j DNAT \
-                        --to-destination "[${LOCAL_DNS_IPV6}]:53" 2>/dev/null \
-                        || $IP6T -t nat -A "$NAT_CHAIN_V6" -d "$dns_client_ipv6" -p "$proto" --dport 53 -j DNAT \
-                        --to-destination "[${LOCAL_DNS_IPV6}]:53"
-                done
+        for dns_client6 in $configured_hosts6; do
+            for proto in tcp udp; do
+                $IP6T -t nat -A "$nat_chain6" -d "$dns_client6" -p "$proto" --dport 53 -j DNAT --to-destination "[${WG_DNS_IP6}]:53"
             done
+        done
+
+        if [ -n "$public_ip6" ]; then
+            for full_access_cidr in $full_access6; do
+                $IP6T -t nat -A "$nat_chain6" -s "$full_access_cidr" -d "$public_ip6" -j RETURN
+            done
+            $IP6T -t nat -A "$nat_chain6" -d "$public_ip6" -j DNAT --to-destination "$WG_NGINX_IP6"
+        else
+            echo "Warning: [wg-firewall] failed to resolve the public IPv6 of HOST_SERVER_HOSTNAME" >&2
+            echo "  Internet only clients get no IPv6 internet until wireguard restarts" >&2
         fi
-    fi
-    ;;
-down)
-    set +e
+        ;;
+    down)
+        set +e
 
-    if [ "$ip6tables_available" -eq 1 ]; then
-        $IP6T -t nat -D PREROUTING -i "$WIREGUARD_INTERFACE" -j "$NAT_CHAIN_V6" 2>/dev/null
-        $IP6T -t nat -F "$NAT_CHAIN_V6" 2>/dev/null
-        $IP6T -t nat -X "$NAT_CHAIN_V6" 2>/dev/null
-        $IP6T -t nat -D POSTROUTING -o "$WG_EGRESS_IFACE" -m comment --comment "$MASQUERADE_COMMENT" -j MASQUERADE 2>/dev/null
-    fi
+        $IPT -t nat -D PREROUTING -i "$WIREGUARD_INTERFACE" -j "$nat_chain" 2>/dev/null
+        $IPT -t nat -F "$nat_chain" 2>/dev/null
+        $IPT -t nat -X "$nat_chain" 2>/dev/null
+        for prefix_cidr in $configured_prefixes; do
+            $IPT -t nat -D POSTROUTING -s "$prefix_cidr" -o "$WG_EGRESS_IFACE" -m comment --comment "$masquerade_comment" -j MASQUERADE 2>/dev/null
+        done
 
-    $IPT -t nat -D PREROUTING -i "$WIREGUARD_INTERFACE" -j "$NAT_CHAIN_V4" 2>/dev/null
-    $IPT -t nat -F "$NAT_CHAIN_V4" 2>/dev/null
-    $IPT -t nat -X "$NAT_CHAIN_V4" 2>/dev/null
-    $IPT -t nat -D POSTROUTING -o "$WG_EGRESS_IFACE" -m comment --comment "$MASQUERADE_COMMENT" -j MASQUERADE 2>/dev/null
+        $IP6T -t nat -D PREROUTING -i "$WIREGUARD_INTERFACE" -j "$nat_chain6" 2>/dev/null
+        $IP6T -t nat -F "$nat_chain6" 2>/dev/null
+        $IP6T -t nat -X "$nat_chain6" 2>/dev/null
+        for prefix_cidr6 in $configured_prefixes6; do
+            $IP6T -t nat -D POSTROUTING -s "$prefix_cidr6" -o "$WG_EGRESS_IFACE" -m comment --comment "$masquerade_comment" -j MASQUERADE 2>/dev/null
+        done
 
-    if [ "$ip6tables_available" -eq 1 ]; then
+        $IPT -t mangle -D FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
+        $IPT -D FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null
+        $IPT -D FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain" 2>/dev/null
+        $IPT -F "$filter_chain" 2>/dev/null
+        $IPT -X "$filter_chain" 2>/dev/null
+
+        $IP6T -t mangle -D FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
         $IP6T -D FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null
-        $IP6T -D FORWARD -i "$WIREGUARD_INTERFACE" -j "$FILTER_CHAIN_V6" 2>/dev/null
-        $IP6T -F "$FILTER_CHAIN_V6" 2>/dev/null
-        $IP6T -X "$FILTER_CHAIN_V6" 2>/dev/null
-    fi
+        $IP6T -D FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain6" 2>/dev/null
+        $IP6T -F "$filter_chain6" 2>/dev/null
+        $IP6T -X "$filter_chain6" 2>/dev/null
 
-    $IPT -D FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null
-    $IPT -D FORWARD -i "$WIREGUARD_INTERFACE" -j "$FILTER_CHAIN_V4" 2>/dev/null
-    $IPT -F "$FILTER_CHAIN_V4" 2>/dev/null
-    $IPT -X "$FILTER_CHAIN_V4" 2>/dev/null
-
-    set -e
-    ;;
+        set -e
+        ;;
 esac

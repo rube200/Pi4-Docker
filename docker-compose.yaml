@@ -1,180 +1,232 @@
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging:
+    driver: journald
+    options:
+      tag: "{{.Name}}"
+  security_opt:
+    - no-new-privileges=true
+
+x-timezone: &timezone
+  TZ: "${TZ:-Europe/Lisbon}"
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
+  start_interval: 5s
+
+x-relay-defaults: &relay-defaults
+  build: ./dhcp-relay-docker/
+  image: pi4-docker/dhcp-relay:local
+  depends_on:
+    pihole:
+      condition: service_healthy
+  network_mode: host
+  cap_add:
+    - NET_ADMIN
+  healthcheck:
+    <<: *healthcheck-defaults
+    test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+
 services:
   unbound:
+    <<: *service-defaults
     build: ./unbound-docker/
+    image: pi4-docker/unbound:local
     container_name: unbound
-    hostname: 'Unbound-Docker'
-    ports:
-      - "5335:5335/udp"
-      - "5335:5335/tcp"
+    hostname: "Unbound-Docker"
+    environment:
+      <<: *timezone
     networks:
       services_network:
         ipv4_address: 172.28.0.2
+        ipv6_address: fd28::2
+    cap_drop:
+      - NET_RAW
     healthcheck:
-      test: ["CMD", "dig", "+ad", "+short", "dnssec.works", "@127.0.0.1", "-p", "5335"]
+      <<: *healthcheck-defaults
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 5s
-    restart: unless-stopped
 
   pihole:
+    <<: *service-defaults
+    image: pihole/pihole:2026.10.1
     container_name: pihole
+    hostname: "Pi-hole-Docker"
     depends_on:
       unbound:
         condition: service_healthy
-    image: pihole/pihole:2026.10.0
-    hostname: 'PiHole-Docker'
-    ports:
-      - "53:53/tcp"
-      - "53:53/udp"
-      - "44353:44353/tcp"
     environment:
-      TZ: 'Europe/Lisbon'
-      FTLCONF_dns_upstreams: '172.28.0.2#5335'
-      FTLCONF_dns_listeningMode: 'ALL'
-      FTLCONF_dns_piholePTR: 'HOSTNAMEFQDN'
-      FTLCONF_dns_replyWhenBusy: 'BLOCK'
-      FTLCONF_dns_domainNeeded: true
-      FTLCONF_dns_expandHosts: true
-      FTLCONF_dns_dnssec: true
-      FTLCONF_dns_blocking_active: true
-      FTLCONF_dns_rateLimit_count: 1200
-      FTLCONF_misc_dnsmasq_lines: 'shared-network=eth0,${PIHOLE_LAN_IP};dhcp-option=option:dns-server,${PIHOLE_LAN_IP}'
-      FTLCONF_webserver_domain: ${SERVER_HOSTNAME}
-      FTLCONF_webserver_port: +44353s
-      FTLCONF_webserver_session_timeout: 2592000
-      FTLCONF_webserver_tls_validity: 365
-    volumes:
-      - '/etc/pihole:/etc/pihole'
-    cap_add:
-      - NET_ADMIN
-      - NET_BIND_SERVICE
-      - NET_RAW
-      - SYS_NICE
+      <<: *timezone
+      FTLCONF_dhcp_ipv6: "false"
+      FTLCONF_dhcp_multiDNS: "false"
+      FTLCONF_dns_blocking_active: "true"
+      FTLCONF_dns_dnssec: "true"
+      FTLCONF_dns_domainNeeded: "true"
+      FTLCONF_dns_expandHosts: "true"
+      FTLCONF_dns_listeningMode: "ALL"
+      FTLCONF_dns_piholePTR: "HOSTNAMEFQDN"
+      FTLCONF_dns_rateLimit_count: "12000"
+      FTLCONF_dns_replyWhenBusy: "BLOCK"
+      FTLCONF_dns_upstreams: "172.28.0.2#5335;fd28::2#5335"
+      FTLCONF_misc_dnsmasq_lines: "shared-network=172.28.0.3,${HOST_LAN_IP:?};dhcp-proxy;no-ping;dhcp-option=option:dns-server,${HOST_LAN_IP:?};dhcp-range=${HOST_LAN_IP6:?},ra-stateless,64;dhcp-option=option6:dns-server,[${HOST_LAN_IP6:?}]"
+      FTLCONF_webserver_acl: "+127.0.0.1,+[::1],+[::ffff:127.0.0.1],+172.28.0.6,+[::ffff:172.28.0.6],+[fd28::6]"
+      FTLCONF_webserver_domain: "${HOST_SERVER_HOSTNAME:?}"
+      FTLCONF_webserver_port: "+44353s"
+      FTLCONF_webserver_session_timeout: "2592000"
+      FTLCONF_webserver_tls_validity: "365"
     networks:
       services_network:
         ipv4_address: 172.28.0.3
-    healthcheck:
-      test: ["CMD", "dig", "+ad", "+short", "dnssec.works", "@127.0.0.1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-  dhcp-relay:
-    container_name: dhcp-relay
-    depends_on:
-      pihole:
-        condition: service_healthy
-    image: homeall/dhcphelper:2026.10.01
-    privileged: true
-    environment:
-      IP: 172.28.0.3
-      TZ: 'Europe/Lisbon'
+        ipv6_address: fd28::3
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    volumes:
+      - "/etc/pihole:/etc/pihole"
     cap_add:
       - NET_ADMIN
-    network_mode: host
-    restart: unless-stopped
+      - SYS_NICE
+    security_opt: []
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "dig +short pi.hole @127.0.0.1 | grep -qE '^[0-9a-f.:]+$$' && dig +short pi.hole @::1 | grep -qE '^[0-9a-f.:]+$$'"]
+
+  dhcp-relay:
+    <<: [*service-defaults, *relay-defaults]
+    container_name: dhcp-relay
+    environment:
+      <<: *timezone
+      DHCP_IFACE: "${HOST_LAN_IFACE:-eth0}"
+      DHCP_LAN_IP: "${HOST_LAN_IP:?}"
+      DHCP_LOCAL_IP: "${DHCP_LOCAL_IP:-}"
+      DHCP_SERVER: "172.28.0.3"
+
+  dhcpv6-relay:
+    <<: [*service-defaults, *relay-defaults]
+    container_name: dhcpv6-relay
+    environment:
+      <<: *timezone
+      DHCP_IFACE: "${HOST_LAN_IFACE:-eth0}"
+      DHCP_LAN_IP: "${HOST_LAN_IP6:?}"
+      DHCP_LOCAL_IP: "${DHCP_LOCAL_IP6:-}"
+      DHCP_SERVER: "fd28::3"
 
   doh:
+    <<: *service-defaults
     build: ./doh-docker/
+    image: pi4-docker/doh:local
     container_name: doh
+    hostname: "DoH-Docker"
     depends_on:
       pihole:
         condition: service_healthy
-    hostname: 'DoH-Docker'
-    ports:
-      - "3000:3000/tcp"
     environment:
-      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
-      - DOH_UPSTREAM_DNS=${DOH_UPSTREAM_DNS:-172.28.0.3:53}
-      - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
-      - DOH_PUBLIC_PORT=${DOH_PUBLIC_PORT:-8443}
+      <<: *timezone
+      DOH_LISTEN: "172.28.0.4:3000"
+      DOH_LISTEN6: "[fd28::4]:3000"
+      DOH_PATH: "${DOH_PATH:-consulta-dns}"
+      DOH_UPSTREAM_DNS: "172.28.0.3:53"
+      DOH_UPSTREAM_DNS6: "[fd28::3]:53"
+      HOST_SERVER_HOSTNAME: "${HOST_SERVER_HOSTNAME:?}"
     networks:
       services_network:
         ipv4_address: 172.28.0.4
+        ipv6_address: fd28::4
+    cap_drop:
+      - NET_RAW
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
 
-  nginx:
-    build: ./nginx/
-    container_name: nginx
+  wireguard:
+    <<: *service-defaults
+    build: ./wireguard-docker/
+    image: pi4-docker/wireguard:local
+    container_name: wireguard
+    hostname: "WireGuard-Docker"
     depends_on:
-      doh:
-        condition: service_healthy
       pihole:
         condition: service_healthy
-    hostname: 'Nginx-Docker'
-    ports:
-      - "80:80/tcp"
-      - "443:443/tcp"
-      - "8443:8443/tcp"
-      - "853:853/tcp"
     environment:
-      - DOH_PATH_PREFIX=${DOH_PATH_PREFIX:-consulta-dns}
-      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
-      - DNS_API=${DNS_API}
-    volumes:
-      - '/etc/letsencrypt:/etc/letsencrypt'
-      - '/var/www/certbot:/var/www/certbot'
+      <<: *timezone
+      HOST_LAN_IP6: "${HOST_LAN_IP6:?}"
+      HOST_SERVER_HOSTNAME: "${HOST_SERVER_HOSTNAME:?}"
+      WG_ALLOWLIST: "${WG_ALLOWLIST:-172.28.0.6,fd28::6}"
+      WG_DNS_IP: "172.28.0.3"
+      WG_DNS_IP6: "fd28::3"
+      WG_FULL_ACCESS_MASK: "28"
+      WG_NGINX_IP: "172.28.0.6"
+      WG_NGINX_IP6: "fd28::6"
     networks:
       services_network:
         ipv4_address: 172.28.0.5
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
-    restart: unless-stopped
-
-  wireguard:
-    build: ./wireguard-docker/
-    container_name: wireguard
-    depends_on:
-      pihole:
-        condition: service_healthy
-    hostname: 'Wireguard-Docker'
+        ipv6_address: fd28::5
     ports:
       - "51820:51820/udp"
-    environment:
-      - SERVER_HOSTNAME=${SERVER_HOSTNAME}
-      - LOCAL_DNS_IP=${LOCAL_DNS_IP:-172.28.0.3}
-      - LOCAL_DNS_IPV6=${LOCAL_DNS_IPV6:-}
-      - LOCAL_ALLOWLIST=${LOCAL_ALLOWLIST:-172.28.0.1,172.28.0.2,172.28.0.3,172.28.0.4,172.28.0.5}
-      - WG_EGRESS_IFACE=${WG_EGRESS_IFACE:-eth0}
     volumes:
-      - '/etc/wireguard:/etc/wireguard'
-      - '/lib/modules:/lib/modules:ro'
+      - "/etc/wireguard:/etc/wireguard"
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
+    cap_drop:
+      - NET_RAW
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+
+  nginx:
+    <<: *service-defaults
+    build: ./nginx-docker/
+    image: pi4-docker/nginx:local
+    container_name: nginx
+    hostname: "nginx-Docker"
+    depends_on:
+      doh:
+        condition: service_started
+      pihole:
+        condition: service_healthy
+    environment:
+      <<: *timezone
+      DOH_PATH: "${DOH_PATH:-consulta-dns}"
+      HOST_SERVER_HOSTNAME: "${HOST_SERVER_HOSTNAME:?}"
     networks:
       services_network:
         ipv4_address: 172.28.0.6
+        ipv6_address: fd28::6
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+      - "853:853/tcp"
+      - "8443:8443/tcp"
+      - "8443:8443/udp"
+    volumes:
+      - "/etc/letsencrypt/archive:/etc/letsencrypt/archive:ro"
+      - "/etc/letsencrypt/live:/etc/letsencrypt/live:ro"
+      - "/var/www/certbot:/var/www/certbot:ro"
+    cap_drop:
+      - NET_RAW
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv4.conf.all.src_valid_mark=1
-      - net.ipv6.conf.all.forwarding=1
-    restart: unless-stopped
 
 networks:
   services_network:
     driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1500"
+    enable_ipv6: true
     ipam:
       config:
         - subnet: 172.28.0.0/16
-    driver_opts:
-      com.docker.network.driver.mtu: ${NETWORK_MTU:-1500}
+          gateway: 172.28.0.1
+        - subnet: fd28::/64
+          gateway: fd28::1

@@ -2,28 +2,41 @@
 set -e
 
 readonly BINARY_PATH="/usr/local/bin/doh-proxy"
+readonly DOH_PUBLIC_PORT=8443
 
-[ -n "$SERVER_HOSTNAME" ] || {
-    echo "Error: SERVER_HOSTNAME is not set and no config file found" >&2
-    exit 1
+start_proxy() {
+    "$BINARY_PATH" \
+        -H "$HOST_SERVER_HOSTNAME" \
+        -l "$1" \
+        -p "$DOH_PATH" \
+        -j "$DOH_PUBLIC_PORT" \
+        -u "$2" \
+        --enable-ecs &
 }
 
-[ -x "$BINARY_PATH" ] || {
-    echo "Error: $BINARY_PATH is missing or not executable" >&2
-    echo "Rebuild the image with: docker compose build doh" >&2
+if [ -z "$HOST_SERVER_HOSTNAME" ]; then
+    echo "Error: [doh] HOST_SERVER_HOSTNAME is not set" >&2
     exit 1
-}
+fi
 
-DOH_PATH_PREFIX="${DOH_PATH_PREFIX:-consulta-dns}"
-DOH_PUBLIC_PORT="${DOH_PUBLIC_PORT:-8443}"
-DOH_UPSTREAM_DNS="${DOH_UPSTREAM_DNS:-172.28.0.3:53}"
+if [ ! -x "$BINARY_PATH" ]; then
+    echo "Error: [doh] ${BINARY_PATH} is missing or not executable" >&2
+    exit 1
+fi
 
-echo "Starting doh-server..."
-exec "$BINARY_PATH" \
-    -O \
-    -H "$SERVER_HOSTNAME" \
-    -l "[::]:3000" \
-    -p "$DOH_PATH_PREFIX" \
-    -j "$DOH_PUBLIC_PORT" \
-    -u "$DOH_UPSTREAM_DNS" \
-    --enable-ecs
+echo "[doh] Starting doh-proxy for IPv4 and IPv6..."
+start_proxy "$DOH_LISTEN" "$DOH_UPSTREAM_DNS"
+pid=$!
+start_proxy "$DOH_LISTEN6" "$DOH_UPSTREAM_DNS6"
+pid6=$!
+
+trap 'kill "$pid" "$pid6" 2>/dev/null; exit 0' TERM INT
+
+while kill -0 "$pid" 2>/dev/null && kill -0 "$pid6" 2>/dev/null; do
+    sleep 5 &
+    wait $!
+done
+
+echo "Error: [doh] a doh-proxy process exited" >&2
+kill "$pid" "$pid6" 2>/dev/null || true
+exit 1

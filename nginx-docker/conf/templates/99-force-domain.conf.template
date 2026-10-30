@@ -1,0 +1,15 @@
+server {
+    listen 443 quic default_server reuseport;
+    listen [::]:443 quic default_server reuseport;
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+
+    server_name _;
+
+    include /etc/nginx/common.d/ssl.conf;
+    include /etc/nginx/common.d/no-document.conf;
+
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+
+    return 308 https://$HOST_SERVER_HOSTNAME$request_uri;
+}
