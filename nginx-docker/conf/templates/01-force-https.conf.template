@@ -1,0 +1,38 @@
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name $HOST_SERVER_HOSTNAME *.$HOST_SERVER_HOSTNAME;
+
+    include /etc/nginx/common.d/no-document.conf;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    server_name _;
+
+    include /etc/nginx/common.d/no-document.conf;
+
+    location = /healthz {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        return 308 https://$HOST_SERVER_HOSTNAME$request_uri;
+    }
+}

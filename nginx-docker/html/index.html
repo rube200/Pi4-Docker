@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>Landing Page</title>
+    <link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" rel="stylesheet">
+</head>
+<body class="bg-dark text-center">
+<div class="container vh-100">
+    <div class="align-items-baseline py-5 row">
+        <div class="bg-transparent border-0 col d-flex justify-content-center h-100">
+            <div class="row">
+                <img alt="Home Assistant logo" class="pb-1" id="redirectToHomeAssistant" src="/home-assistant.svg">
+                <a class="btn btn-primary disabled" href="#" id="homeAssistantBtn">Home Assistant dashboard</a>
+            </div>
+        </div>
+        <div class="bg-transparent border-0 col d-flex justify-content-center h-100">
+            <div class="row">
+                <img alt="Kodi logo" class="pb-1" id="redirectToKodi" src="/kodi.svg">
+                <a class="btn btn-primary disabled" href="#" id="kodiBtn">Kodi dashboard</a>
+            </div>
+        </div>
+        <div class="bg-transparent border-0 col d-flex justify-content-center h-100">
+            <div class="row">
+                <img alt="Pi-hole logo" id="redirectToPiHole" src="/pi-hole.svg">
+                <a class="btn btn-primary disabled" href="#" id="piHoleBtn">Pi-hole dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/redirect.js"></script>
+</body>
+</html>

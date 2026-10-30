@@ -5,15 +5,11 @@ FROM alpine:3.24.3
 # Drop the edge repo and @edge once the base image is Alpine 3.25.
 RUN apk upgrade --no-cache \
     && echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
-    && apk add --no-cache bind-tools unbound@edge \
-    && mkdir -p /var/lib/unbound \
-    && chown -R unbound:unbound /var/lib/unbound /etc/unbound
+    && apk add --no-cache bind-tools tzdata unbound@edge
 
-COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
 COPY --chmod=644 pi-hole.conf /etc/unbound/unbound.conf.d/pi-hole.conf
+COPY --chmod=755 healthcheck.sh /usr/local/bin/
 
-EXPOSE 5335/udp
-EXPOSE 5335/tcp
+EXPOSE 5335/tcp 5335/udp
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["unbound", "-d"]
+CMD ["unbound", "-d", "-d"]

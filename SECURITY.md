@@ -10,10 +10,10 @@ Please include enough detail to reproduce or understand the issue (affected path
 
 ## Scope and expectations
 
-This project is a **self-hosted reference stack**. It wires together upstream software (Pi-hole, Unbound, Nginx, WireGuard, etc.). Vulnerabilities in **upstream images or products** should be reported to those projects’ own security contacts; fixes here are limited to updating pins, defaults, or integration glue when appropriate.
+This project is a **self-hosted reference stack**. It wires together upstream software (Pi-hole, Unbound, nginx, WireGuard, etc.). Vulnerabilities in **upstream images or products** should be reported to those projects’ own security contacts; fixes here are limited to updating pins, defaults, or integration glue when appropriate.
 
 There is **no bug bounty** and **no SLA** for triage or fixes. Reports are handled on a best-effort basis.
 
 ## After publication
 
-Keep production hosts patched, rotate secrets if they may have been exposed, and review firewall and exposure (WAN vs LAN) against your threat model. The reference **full public edge**, router forwards, and **per-IP new-flow** rate limits are documented in [README.md](README.md) (Network and ports). Do not forward admin/backends (**44353**, **5335**, **3000**) to the WAN.
+Keep production hosts patched, rotate secrets if they may have been exposed, and review firewall and exposure (WAN vs LAN) against your threat model. The reference **full public edge**, router forwards, and **per-source new-flow** rate limits (per IPv4 address, per IPv6 /64) are documented in [README.md](README.md#network-and-ports) and [its firewall section](README.md#firewall-and-rate-limits).

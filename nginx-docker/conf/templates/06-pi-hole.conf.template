@@ -1,0 +1,55 @@
+map "$request_method$uri" $pihole_auth {
+    default "";
+    ~*^POST/api/auth/?$ $limit_key;
+}
+
+map $pihole_auth $pihole_auth_all {
+    default all;
+    "" "";
+}
+
+limit_req_zone $limit_key zone=pi-hole-req:1m rate=30r/s;
+limit_req_zone $pihole_auth zone=pi-hole-auth-req:1m rate=10r/m;
+limit_req_zone $pihole_auth_all zone=pi-hole-auth-all-req:64k rate=30r/m;
+
+upstream pi-hole {
+    zone pi-hole 64k;
+
+    server 172.28.0.3:44353;
+    server [fd28::3]:44353;
+
+    keepalive 4;
+    keepalive_timeout 4s;
+}
+
+server {
+    include /etc/nginx/common.d/common.conf;
+
+    server_name pi-hole.$HOST_SERVER_HOSTNAME;
+
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; connect-src 'self'; img-src 'self' data:; script-src-elem 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; upgrade-insecure-requests" always;
+
+    location ~* ^/(?:admin|api) {
+        proxy_pass https://pi-hole;
+
+        include /etc/nginx/common.d/proxy-common.conf;
+
+        client_max_body_size 32m;
+        gzip off;
+        limit_req zone=pi-hole-auth-all-req burst=10 nodelay;
+        limit_req zone=pi-hole-auth-req burst=5 nodelay;
+        limit_req zone=pi-hole-req burst=60 nodelay;
+
+        proxy_connect_timeout 2s;
+        proxy_cookie_flags ~ httponly secure;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+    }
+
+    location / {
+        if ($request_method = 'HEAD') {
+            rewrite ^ /admin/login last;
+        }
+
+        return 308 /admin;
+    }
+}

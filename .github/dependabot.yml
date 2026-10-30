@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /dhcp-relay-docker
+      - /doh-docker
+      - /nginx-docker
+      - /unbound-docker
+      - /wireguard-docker
+    schedule:
+      interval: daily
+    commit-message:
+      prefix: deps
+    groups:
+      docker:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: daily
+    commit-message:
+      prefix: deps
+    ignore:
+      - dependency-name: "pi4-docker/*"

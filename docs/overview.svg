@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1330 480" width="1330" height="480" role="img" aria-labelledby="title">
+  <title id="title">Pi4-Docker overview: clients, services and ports</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --box: #f6f8fa;
+      --group: #fbfcfd;
+      --line: #57606a;
+      --text: #1f2328;
+      --muted: #0969da;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --box: #161b22;
+        --group: #10151c;
+        --line: #8b949e;
+        --text: #e6edf3;
+        --muted: #58a6ff;
+      }
+    }
+    text {
+      dominant-baseline: central;
+      fill: var(--text);
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 13px;
+      text-anchor: middle;
+    }
+    .box { fill: var(--box); stroke: var(--line); stroke-width: 1.2; }
+    .group { fill: var(--group); stroke: var(--line); stroke-width: 1.2; }
+    .group-title { fill: var(--muted); }
+    .edge { fill: none; stroke: var(--line); stroke-width: 1.2; marker-end: url(#arrow); }
+    .head { fill: var(--line); }
+    .label { paint-order: stroke; stroke: var(--bg); stroke-linejoin: round; stroke-width: 6px; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto">
+      <path class="head" d="M0 0 L10 5 L0 10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="group" x="16" y="16" width="168" height="448" rx="8"/>
+  <text class="group-title" x="100" y="34">Clients</text>
+  <rect class="box" x="36" y="48" width="128" height="40" rx="4"/>
+  <text x="100" y="68">LAN devices</text>
+  <rect class="box" x="36" y="412" width="128" height="40" rx="4"/>
+  <text x="100" y="432">Remote devices</text>
+
+  <rect class="box" x="374" y="44" width="120" height="48" rx="4"/>
+  <text x="434" y="60">dhcp-relay</text>
+  <text x="434" y="76">dhcpv6-relay</text>
+  <rect class="box" x="374" y="176" width="120" height="40" rx="4"/>
+  <text x="434" y="196">nginx</text>
+  <rect class="box" x="374" y="328" width="120" height="40" rx="4"/>
+  <text x="434" y="348">wireguard</text>
+
+  <rect class="box" x="704" y="176" width="140" height="40" rx="4"/>
+  <text x="774" y="196">doh-proxy</text>
+  <rect class="box" x="704" y="226" width="140" height="40" rx="4"/>
+  <text x="774" y="246">Landing page</text>
+  <rect class="box" x="704" y="356" width="140" height="40" rx="4"/>
+  <text x="774" y="376">The Pi and the LAN</text>
+  <rect class="box" x="704" y="412" width="140" height="40" rx="4"/>
+  <text x="774" y="432">Internet</text>
+
+  <rect class="box" x="974" y="166" width="100" height="80" rx="4"/>
+  <text x="1024" y="206">pihole</text>
+  <rect class="box" x="1179" y="186" width="100" height="40" rx="4"/>
+  <text x="1229" y="206">unbound</text>
+  <rect class="box" x="1144" y="296" width="170" height="48" rx="4"/>
+  <text x="1229" y="312">Root and authoritative</text>
+  <text x="1229" y="328">servers</text>
+
+  <path class="edge" d="M164 68 H374"/>
+  <path class="edge" d="M494 68 H1029 Q1044 68 1044 83 V166"/>
+  <path class="edge" d="M184 116 H989 Q1004 116 1004 131 V166"/>
+  <path class="edge" d="M184 196 H374"/>
+  <path class="edge" d="M184 348 H374"/>
+  <path class="edge" d="M494 188 C524 188 524 154 554 154 H919 C946 154 946 176 974 176"/>
+  <path class="edge" d="M494 196 H704"/>
+  <path class="edge" d="M844 196 H974"/>
+  <path class="edge" d="M494 206 C524 206 524 246 554 246 H704"/>
+  <path class="edge" d="M494 212 C524 212 524 288 554 288 H909 C944 288 944 226 974 226"/>
+  <path class="edge" d="M434 328 V216"/>
+  <path class="edge" d="M494 340 H1009 Q1024 340 1024 325 V246"/>
+  <path class="edge" d="M494 352 C524 352 524 376 554 376 H704"/>
+  <path class="edge" d="M494 360 C524 360 524 432 554 432 H704"/>
+  <path class="edge" d="M1074 206 H1179"/>
+  <path class="edge" d="M1229 226 V296"/>
+
+  <text class="label" x="269" y="68">DHCP 67 / 547</text>
+  <text class="label" x="761" y="68">DHCP 67 / 547</text>
+  <text class="label" x="586" y="116">DNS 53</text>
+  <text class="label" x="279" y="188">HTTP 80, HTTPS 443</text>
+  <text class="label" x="279" y="204">DoT 853, DoH 8443</text>
+  <text class="label" x="279" y="348">WireGuard 51820</text>
+  <text class="label" x="774" y="154">DoT 53</text>
+  <text class="label" x="599" y="196">DoH 3000</text>
+  <text class="label" x="909" y="196">DNS 53</text>
+  <text class="label" x="629" y="246">Default page</text>
+  <text class="label" x="774" y="288">Web interface 44353</text>
+  <text class="label" x="434" y="264">HTTP 80, HTTPS 443</text>
+  <text class="label" x="434" y="280">DoT 853, DoH 8443</text>
+  <text class="label" x="654" y="340">DNS 53</text>
+  <text class="label" x="629" y="376">Full access only</text>
+  <text class="label" x="629" y="432">All clients</text>
+  <text class="label" x="1126" y="206">DNS 5335</text>
+  <text class="label" x="1229" y="261">DNS 53</text>
+</svg>

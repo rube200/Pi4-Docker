@@ -1,0 +1,28 @@
+server {
+    include /etc/nginx/common.d/common.conf;
+
+    server_name $HOST_SERVER_HOSTNAME;
+
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; connect-src 'self' https://*.$HOST_SERVER_HOSTNAME; img-src 'self' data:; script-src-elem 'self'; style-src 'self' https://cdn.jsdelivr.net; upgrade-insecure-requests" always;
+
+    error_page 404 =200 /;
+    root /usr/share/nginx/html;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location ~* \.(?:css|js|svg|png|woff2?)$ {
+        expires 7d;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+
+        expires -1;
+
+        if ($request_method = 'HEAD') {
+            return 200;
+        }
+    }
+}

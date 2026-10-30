@@ -1,16 +1,15 @@
 FROM alpine:3.24.3
 
 RUN apk upgrade --no-cache \
-    && apk add --no-cache bind-tools ip6tables iptables wireguard-tools
+    && apk add --no-cache bind-tools iptables tzdata wireguard-tools
 
+COPY --chmod=644 wg0.conf.template /usr/local/share/wireguard/wg0.conf.template
 COPY --chmod=755 \
+    create-client.sh \
     docker-entrypoint.sh \
     healthcheck.sh \
-    create-client.sh \
     wg-container-firewall.sh \
     /usr/local/bin/
-
-COPY wg0.conf.template /usr/local/share/wireguard/wg0.conf.template
 
 EXPOSE 51820/udp
 

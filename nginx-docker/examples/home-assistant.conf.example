@@ -1,0 +1,25 @@
+# Copy to nginx-docker/conf/templates/07-home-assistant.conf.template and rebuild to enable.
+# 172.28.0.1 is the host; 127.0.0.1 would be the nginx container itself.
+
+upstream home-assistant {
+    zone home-assistant 64k;
+
+    server 172.28.0.1:8123;
+
+    keepalive 4;
+    keepalive_timeout 4s;
+}
+
+server {
+    include /etc/nginx/common.d/common.conf;
+
+    server_name home-assistant.$HOST_SERVER_HOSTNAME;
+
+    add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; object-src 'none'; connect-src 'self' wss:; img-src 'self' data: blob: https:; script-src-elem 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; upgrade-insecure-requests" always;
+
+    location / {
+        proxy_pass http://home-assistant;
+
+        include /etc/nginx/common.d/proxy-common.conf;
+    }
+}

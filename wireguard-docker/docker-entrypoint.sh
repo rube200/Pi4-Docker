@@ -1,99 +1,108 @@
 #!/bin/sh
 set -e
 
-[ -n "$SERVER_HOSTNAME" ] || {
-    echo "Error: SERVER_HOSTNAME is not set" >&2
-    exit 1
+readonly WG_CONFIG_DIR="/etc/wireguard"
+readonly WG_FIREWALL_ENV="${WG_CONFIG_DIR}/wg-firewall.env"
+readonly CREATE_CLIENT_IMG="/usr/local/bin/create-client.sh"
+readonly CREATE_CLIENT_VOL="${WG_CONFIG_DIR}/create-client.sh"
+readonly WG_TEMPLATE_IMG="/usr/local/share/wireguard/wg0.conf.template"
+readonly WG_TEMPLATE_VOL="${WG_CONFIG_DIR}/wg0.conf.template"
+
+has_wg_conf() {
+    for _path in "$WG_CONFIG_DIR"/wg*.conf; do
+        [ -f "$_path" ] && return 0
+    done
+    return 1
 }
 
-readonly WIREGUARD_CONFIG_DIR="/etc/wireguard"
-readonly WIREGUARD_FIREWALL_ENV_PATH="${WIREGUARD_CONFIG_DIR}/wg-firewall.env"
-readonly WIREGUARD_TEMPLATE_VOLUME_PATH="${WIREGUARD_CONFIG_DIR}/wg0.conf.template"
-readonly WIREGUARD_TEMPLATE_IMAGE_PATH="/usr/local/share/wireguard/wg0.conf.template"
-readonly CREATE_CLIENT_IMG="/usr/local/bin/create-client.sh"
-readonly CREATE_CLIENT_VOL="${WIREGUARD_CONFIG_DIR}/create-client.sh"
+stop_wireguard() {
+    echo "[wg] Shutting down WireGuard..."
+    for _interface in $started_interfaces; do
+        wg-quick down "$_interface" 2>/dev/null || true
+    done
+    exit 0
+}
 
-if [ ! -r "$WIREGUARD_TEMPLATE_VOLUME_PATH" ] && [ -r "$WIREGUARD_TEMPLATE_IMAGE_PATH" ]; then
-    echo "Installing default WireGuard template on volume..."
-    cp "$WIREGUARD_TEMPLATE_IMAGE_PATH" "$WIREGUARD_TEMPLATE_VOLUME_PATH"
-    chmod 644 "$WIREGUARD_TEMPLATE_VOLUME_PATH"
+if [ -z "$HOST_SERVER_HOSTNAME" ]; then
+    echo "Error: [wg] HOST_SERVER_HOSTNAME is not set" >&2
+    exit 1
 fi
 
-any_wg_conf_present=no
-for wg_conf_path in "$WIREGUARD_CONFIG_DIR"/wg*.conf; do
-    [ -f "$wg_conf_path" ] || continue
-    any_wg_conf_present=yes
-    break
-done
-
-if [ "$any_wg_conf_present" = no ]; then
-    echo "No wg*.conf in ${WIREGUARD_CONFIG_DIR}; creating wg0.conf from template..."
-    cp "$WIREGUARD_TEMPLATE_VOLUME_PATH" "${WIREGUARD_CONFIG_DIR}/wg0.conf"
-    chmod 600 "${WIREGUARD_CONFIG_DIR}/wg0.conf"
+if [ ! -r "$WG_TEMPLATE_VOL" ] && [ -r "$WG_TEMPLATE_IMG" ]; then
+    echo "[wg] Installing default WireGuard template on volume..."
+    cp "$WG_TEMPLATE_IMG" "$WG_TEMPLATE_VOL"
+    chmod 644 "$WG_TEMPLATE_VOL"
 fi
 
-if [ -r "$CREATE_CLIENT_IMG" ] && [ ! -r "$CREATE_CLIENT_VOL" ]; then
-    echo "Installing default create-client.sh on volume..."
+if ! has_wg_conf; then
+    echo "[wg] No wg*.conf in ${WG_CONFIG_DIR}; creating wg0.conf from template..."
+    cp "$WG_TEMPLATE_VOL" "${WG_CONFIG_DIR}/wg0.conf"
+    chmod 600 "${WG_CONFIG_DIR}/wg0.conf"
+fi
+
+if ! cmp -s "$CREATE_CLIENT_IMG" "$CREATE_CLIENT_VOL"; then
+    echo "[wg] Installing create-client.sh on volume..."
     cp "$CREATE_CLIENT_IMG" "$CREATE_CLIENT_VOL"
     chmod 755 "$CREATE_CLIENT_VOL"
-    sed -i "s|SERVER_IP_OR_HOSTNAME|${SERVER_HOSTNAME}|g" "$CREATE_CLIENT_VOL"
 fi
 
-{
-    printf 'SERVER_HOSTNAME=%s\n' "${SERVER_HOSTNAME}"
-    printf 'LOCAL_DNS_IP=%s\n' "${LOCAL_DNS_IP}"
-    printf 'LOCAL_DNS_IPV6=%s\n' "${LOCAL_DNS_IPV6:-}"
-    printf 'LOCAL_ALLOWLIST=%s\n' "${LOCAL_ALLOWLIST}"
-    printf 'WG_EGRESS_IFACE=%s\n' "${WG_EGRESS_IFACE}"
-} >"${WIREGUARD_FIREWALL_ENV_PATH}.new" && mv "${WIREGUARD_FIREWALL_ENV_PATH}.new" "$WIREGUARD_FIREWALL_ENV_PATH"
-chmod 644 "$WIREGUARD_FIREWALL_ENV_PATH"
+WG_EGRESS_IFACE=$(ip route show default | awk '{print $5; exit}')
 
-for wg_conf_path in "$WIREGUARD_CONFIG_DIR"/wg*.conf; do
-    [ -f "$wg_conf_path" ] || continue
-    if grep -q "PRIVATE_KEY_PLACEHOLDER" "$wg_conf_path" 2>/dev/null; then
-        echo "Generating WireGuard key for ${wg_conf_path}..."
+cat >"${WG_FIREWALL_ENV}.new" <<EOF
+HOST_LAN_IP6='${HOST_LAN_IP6}'
+HOST_SERVER_HOSTNAME='${HOST_SERVER_HOSTNAME}'
+WG_ALLOWLIST='${WG_ALLOWLIST}'
+WG_DNS_IP='${WG_DNS_IP}'
+WG_DNS_IP6='${WG_DNS_IP6}'
+WG_EGRESS_IFACE='${WG_EGRESS_IFACE:-eth0}'
+WG_FULL_ACCESS_MASK='${WG_FULL_ACCESS_MASK}'
+WG_NGINX_IP='${WG_NGINX_IP}'
+WG_NGINX_IP6='${WG_NGINX_IP6}'
+EOF
+mv "${WG_FIREWALL_ENV}.new" "$WG_FIREWALL_ENV"
+chmod 644 "$WG_FIREWALL_ENV"
+
+for config_path in "$WG_CONFIG_DIR"/wg*.conf; do
+    [ -f "$config_path" ] || continue
+    if grep -q "PRIVATE_KEY_PLACEHOLDER" "$config_path" 2>/dev/null; then
+        echo "[wg] Generating WireGuard key for ${config_path}..."
         generated_private_key=$(wg genkey)
-        sed -i "s|PRIVATE_KEY_PLACEHOLDER|${generated_private_key}|g" "$wg_conf_path"
-        chmod 600 "$wg_conf_path"
-        echo "Public key ($(basename "$wg_conf_path" .conf)): $(printf '%s' "$generated_private_key" | wg pubkey)"
+        sed -i "s|PRIVATE_KEY_PLACEHOLDER|${generated_private_key}|g" "$config_path"
+        chmod 600 "$config_path"
+        echo "[wg] Public key ($(basename "$config_path" .conf)): $(printf '%s' "$generated_private_key" | wg pubkey)"
     fi
 done
 
-WIREGUARD_INTERFACE_NAMES=$(
-    for wg_conf_path in "$WIREGUARD_CONFIG_DIR"/wg*.conf; do
-        [ -f "$wg_conf_path" ] || continue
-        basename "$wg_conf_path" .conf
-    done | sort -u | tr '\n' ' '
-)
+started_interfaces=
 
-trap 'echo "Shutting down WireGuard..."; for started_interface in $WIREGUARD_STARTED_INTERFACES; do wg-quick down "$started_interface" 2>/dev/null || true; done; exit 0' TERM INT
+trap stop_wireguard TERM INT
 
-WIREGUARD_STARTED_INTERFACES=""
-for interface_name in $WIREGUARD_INTERFACE_NAMES; do
-    [ -n "$interface_name" ] || continue
-    interface_config_path="${WIREGUARD_CONFIG_DIR}/${interface_name}.conf"
-    if [ ! -r "$interface_config_path" ]; then
-        echo "Warning: missing ${interface_config_path}, skip" >&2
+for config_path in "$WG_CONFIG_DIR"/wg*.conf; do
+    if [ ! -r "$config_path" ]; then
+        if [ -e "$config_path" ]; then
+            echo "Warning: [wg] cannot read ${config_path}, skipping" >&2
+        fi
         continue
     fi
+    interface_name=$(basename "$config_path" .conf)
 
     if wg show "$interface_name" >/dev/null 2>&1; then
-        echo "Warning: ${interface_name} already up, taking down first..." >&2
+        echo "Warning: [wg] ${interface_name} is already up, taking it down first" >&2
         wg-quick down "$interface_name" 2>/dev/null || true
         sleep 1
     fi
 
-    echo "Starting WireGuard (${interface_name})..."
+    echo "[wg] Starting WireGuard (${interface_name})..."
     if ! wg-quick up "$interface_name"; then
-        echo "Error: wg-quick up ${interface_name} failed" >&2
+        echo "Error: [wg] wg-quick up ${interface_name} failed" >&2
         exit 1
     fi
-    WIREGUARD_STARTED_INTERFACES="$interface_name $WIREGUARD_STARTED_INTERFACES"
+    started_interfaces="$interface_name $started_interfaces"
     wg show "$interface_name"
 done
 
-if [ -z "$WIREGUARD_STARTED_INTERFACES" ]; then
-    echo "Error: no WireGuard interface was started (check ${WIREGUARD_CONFIG_DIR}/wg*.conf)" >&2
+if [ -z "$started_interfaces" ]; then
+    echo "Error: [wg] no WireGuard interface was started" >&2
     exit 1
 fi
 
