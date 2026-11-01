@@ -5,7 +5,7 @@ FROM alpine:3.24.3
 # Drop the edge repo and @edge once the base image is Alpine 3.25.
 RUN apk upgrade --no-cache \
     && echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
-    && apk add --no-cache bind-tools tzdata unbound@edge
+    && apk add --no-cache bind-tools ca-certificates-bundle tzdata unbound@edge
 
 COPY --chmod=644 pi-hole.conf /etc/unbound/unbound.conf.d/pi-hole.conf
 COPY --chmod=755 healthcheck.sh /usr/local/bin/

@@ -2,7 +2,7 @@
 
 Docker Compose stack for a home server on a Raspberry Pi 4:
 
-- **Unbound**: recursive DNS resolver.
+- **Unbound**: caching, DNSSEC-validating forwarder to Quad9 over DNS-over-TLS.
 - **Pi-hole**: DNS filtering and the LAN’s DHCP server.
 - **DHCP relays** (IPv4 and IPv6), so Pi-hole on the Docker network can serve the LAN.
 - **DNS-over-HTTPS** and **Oblivious DoH** ([doh-server](https://github.com/DNSCrypt/doh-server)).
@@ -43,14 +43,14 @@ Every container has a fixed address on the Docker network `services_network` (`1
 | Container | IPv4 | IPv6 | Role |
 |-----------|------|------|------|
 | (the host) | `172.28.0.1` | `fd28::1` | Docker gateway: containers reach the Pi’s own services here. |
-| `unbound` | `172.28.0.2` | `fd28::2` | Recursive resolver on **5335**; Pi-hole’s only upstream. |
+| `unbound` | `172.28.0.2` | `fd28::2` | Resolver on **5335**, forwarding to Quad9 over DoT; Pi-hole’s only upstream. |
 | `pihole` | `172.28.0.3` | `fd28::3` | DNS filtering on **53**, DHCP server, web interface on **44353** (behind nginx). |
 | `doh` | `172.28.0.4` | `fd28::4` | doh-proxy on **3000**: DNS-over-HTTPS and Oblivious DoH, forwarding to Pi-hole. |
 | `wireguard` | `172.28.0.5` | `fd28::5` | VPN server on **51820**/UDP. |
 | `nginx` | `172.28.0.6` | `fd28::6` | Websites, the Pi-hole web interface, the DoH front end and DoT, all over TLS. |
 | `dhcp-relay`, `dhcpv6-relay` | host network | host network | Relay LAN DHCPv4 / DHCPv6 requests to Pi-hole. |
 
-Compose starts Unbound first, Pi-hole once Unbound is healthy, and the rest once Pi-hole is healthy.
+Compose starts Unbound first, then Pi-hole, and the rest once Pi-hole is healthy. Pi-hole does not wait for Unbound to be healthy, so the LAN keeps DHCP and local names while there is no internet.
 
 ### Repository layout
 
@@ -145,8 +145,8 @@ sudo sysctl --system
 
 Settings you are expected to change live in `.env` (see [.env.example](.env.example)); the rest is fixed in the files below.
 
-- **Unbound:** [unbound-docker/pi-hole.conf](unbound-docker/pi-hole.conf) is the recursive resolver config from the Pi-hole guide, on port **5335**; only the Docker network may query it.
-- **Pi-hole:** configured through the `FTLCONF_*` variables in the compose file (DNSSEC, Unbound as the only upstream, the relayed DHCP subnets, the web domain and port). Pi-hole shows these settings as read-only in its web interface; change them in the compose file. Everything else, the DHCP server included, is set in the web interface and kept in `/etc/pihole`. Web interface logins last 30 days (`FTLCONF_webserver_session_timeout`).
+- **Unbound:** [unbound-docker/pi-hole.conf](unbound-docker/pi-hole.conf) is the resolver config, based on the Pi-hole guide, on port **5335**; only the Docker network may query it. Instead of recursing from the root servers in plaintext, it forwards every query to Quad9 (`dns.quad9.net`, with malware blocking) over DNS-over-TLS. There is no fallback to recursion: if Quad9 is unreachable, DNS fails rather than leaking queries in plaintext. Quad9 validates DNSSEC and Unbound checks every answer again, so a bogus answer is refused even if it comes from Quad9. Quad9 cannot sign the NXDOMAIN it synthesizes for a blocked name, so Quad9's blocks reach clients as SERVFAIL rather than NXDOMAIN. Unbound reports unhealthy while none of Quad9's addresses answers over DNS-over-TLS with a valid certificate; the healthcheck asks Quad9 directly, because an answer from Unbound's cache would hide an outage.
+- **Pi-hole:** configured through the `FTLCONF_*` variables in the compose file (DNSSEC off because Unbound already validates, Unbound as the only upstream, the relayed DHCP subnets, the web domain and port). Pi-hole shows these settings as read-only in its web interface; change them in the compose file. Everything else, the DHCP server included, is set in the web interface and kept in `/etc/pihole`. Web interface logins last 30 days (`FTLCONF_webserver_session_timeout`).
 - **DHCP relays:** [dhcp-relay-docker/](dhcp-relay-docker/) runs dnsmasq as a relay only. Each relay waits for a global address on `HOST_LAN_IFACE`, and reports unhealthy while it waits or when the address it relays from is not `HOST_LAN_IP` (IPv4) or inside the `/64` of `HOST_LAN_IP6`, because Pi-hole drops those requests.
 - **DoH:** [doh-docker/](doh-docker/) runs two doh-proxy processes, one per address family, each forwarding to Pi-hole over the same family. Each process has its own ODoH key, so nginx sends every Oblivious DoH request to the IPv4 one. The image downloads a pinned `doh-proxy` release (`DOH_PROXY_VERSION` in `doh-docker/Dockerfile`, checked against the `DOH_PROXY_SHA256_*` next to it; update all three together) for **x86_64** or **aarch64** only; 32-bit ARM is not supported (see `doh-docker/install-doh-proxy.sh`).
 - **WireGuard:** [wireguard-docker/](wireguard-docker/) holds the server config template, the client script and the container firewall; see [WireGuard](#wireguard).
@@ -431,6 +431,7 @@ To confirm what is newest on Docker Hub, use each image’s tags API (for exampl
 
 - **IPv6 works on the host but not in containers:** Docker’s IPv6 NAT is off (`"ip6tables": true`, see [Requirements](#requirements)).
 - **Pi-hole does not start, port 53 in use:** something else on the host binds **53** (see [Network and ports](#network-and-ports)).
+- **Unbound unhealthy, “Quad9 unreachable over DNS-over-TLS”:** the Pi has no internet, or something blocks TCP **853** to Quad9. Names Unbound has not cached fail until it is back, since there is no fallback.
 - **`dhcpv6-relay` unhealthy, waiting for an address:** the Pi has no global IPv6 on `HOST_LAN_IFACE` (`ip -6 addr show scope global`). Check `accept_ra=2` (see [Requirements](#requirements)).
 - **A relay unhealthy, “Pi-hole drops every request”:** it relays from an address that is not `HOST_LAN_IP`, or not inside the `/64` of `HOST_LAN_IP6`. Fix those in `.env`, or set `DHCP_LOCAL_IP` / `DHCP_LOCAL_IP6`.
 - **nginx unhealthy:** it serves the self-signed placeholder or a certificate within 7 days of expiry (see [Certificates](#certificates)).
