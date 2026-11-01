@@ -68,8 +68,7 @@
   <rect class="box" x="1179" y="186" width="100" height="40" rx="4"/>
   <text x="1229" y="206">unbound</text>
   <rect class="box" x="1144" y="296" width="170" height="48" rx="4"/>
-  <text x="1229" y="312">Root and authoritative</text>
-  <text x="1229" y="328">servers</text>
+  <text x="1229" y="320">Quad9</text>
 
   <path class="edge" d="M164 68 H374"/>
   <path class="edge" d="M494 68 H1029 Q1044 68 1044 83 V166"/>
@@ -105,5 +104,5 @@
   <text class="label" x="629" y="376">Full access only</text>
   <text class="label" x="629" y="432">All clients</text>
   <text class="label" x="1126" y="206">DNS 5335</text>
-  <text class="label" x="1229" y="261">DNS 53</text>
+  <text class="label" x="1229" y="261">DoT 853</text>
 </svg>

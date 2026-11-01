@@ -59,13 +59,13 @@ services:
     hostname: "Pi-hole-Docker"
     depends_on:
       unbound:
-        condition: service_healthy
+        condition: service_started
     environment:
       <<: *timezone
       FTLCONF_dhcp_ipv6: "false"
       FTLCONF_dhcp_multiDNS: "false"
       FTLCONF_dns_blocking_active: "true"
-      FTLCONF_dns_dnssec: "true"
+      FTLCONF_dns_dnssec: "false"
       FTLCONF_dns_domainNeeded: "true"
       FTLCONF_dns_expandHosts: "true"
       FTLCONF_dns_listeningMode: "ALL"
