@@ -4,6 +4,11 @@ set -e
 readonly NGINX_SSL_DIR="/etc/nginx/ssl"
 readonly QUIC_HOST_KEY="${NGINX_SSL_DIR}/quic_host.key"
 
+has_current_certificate() {
+    [ -f "${NGINX_SSL_DIR}/fullchain.pem" ] && [ -f "${NGINX_SSL_DIR}/privkey.pem" ] \
+        && openssl x509 -in "${NGINX_SSL_DIR}/fullchain.pem" -noout -checkend 0 >/dev/null 2>&1
+}
+
 if [ -z "$HOST_SERVER_HOSTNAME" ]; then
     echo "Error: [nginx] HOST_SERVER_HOSTNAME is not set" >&2
     exit 1
@@ -24,7 +29,7 @@ else
     echo "Note: [nginx] no certificate at ${le_cert_dir}" >&2
 fi
 
-if [ ! -f "${NGINX_SSL_DIR}/fullchain.pem" ] || [ ! -f "${NGINX_SSL_DIR}/privkey.pem" ]; then
+if ! has_current_certificate; then
     echo "Warning: [nginx] generating a self-signed placeholder so nginx can start" >&2
     if ! openssl req -x509 -newkey rsa:2048 -nodes -days 14 \
         -subj "/CN=${hostname_lower}" \

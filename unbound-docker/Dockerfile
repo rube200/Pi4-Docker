@@ -1,4 +1,4 @@
-FROM alpine:3.24.3
+FROM alpine:3.24.4
 
 # unbound from Alpine edge: 3.24 ships 1.25.2, which lacks the 1.26.1/1.26.2 DNSSEC and
 # parsing fixes (CVE-2026-81634, -85501, -96405) that malicious upstream replies can trigger.
