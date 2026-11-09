@@ -95,7 +95,7 @@ sudo sysctl --system
    cd /opt/Pi4-Docker
    ```
 
-2. Copy the environment template and set at least `HOST_SERVER_HOSTNAME`, `HOST_LAN_IP` and `HOST_LAN_IP6`. See [.env.example](.env.example) for all variables.
+2. Copy the environment template and set at least `HOST_SERVER_HOSTNAME`, `HOST_LAN_IP` and `HOST_LAN_IP6`. See [.env.example](.env.example) for all variables. Also add your LAN’s global IPv6 prefix (the `/64` of `HOST_LAN_IP6`) to `TRUSTED_PREFIX6`: LAN devices reach the Pi from their global IPv6 addresses, and without it the firewall treats them like internet clients (shared DNS rate limit, no SSH).
 
    ```bash
    sudo cp .env.example .env
@@ -231,7 +231,7 @@ nginx and Pi-hole add their own per-client limits on top of the firewall. They a
 | nginx, Pi-hole web interface | **30** requests/second, burst **60**; login (`POST /api/auth`) **10**/minute, burst **5**, and **30**/minute, burst **10**, for all clients together |
 | Pi-hole DNS | **12000** queries/minute (`FTLCONF_dns_rateLimit_count`) |
 
-WireGuard clients reach nginx and Pi-hole as `172.28.0.5` / `fd28::5`, DoT clients reach Pi-hole as nginx, and DoH clients reach it as `doh`, so each of those groups shares one budget.
+WireGuard clients reach nginx and Pi-hole as `172.28.0.5` / `fd28::5`, and DoT clients reach Pi-hole as nginx, so each of those groups shares one budget. DoH clients count on their own: `doh` passes each client’s address to Pi-hole, which also shows it in the query log.
 
 ## WireGuard
 
