@@ -227,7 +227,7 @@ nginx and Pi-hole add their own per-client limits on top of the firewall. They a
 |-------|-------|
 | nginx, HTTP, HTTPS and DoH | **64** open connections |
 | nginx, DoT (**853**) | **32** open connections |
-| nginx, DoH (**8443**) | **20** requests/second, burst **40** |
+| nginx, DoH (**8443**) | **20** requests/second, burst **120** |
 | nginx, Pi-hole web interface | **30** requests/second, burst **60**; login (`POST /api/auth`) **10**/minute, burst **5**, and **30**/minute, burst **10**, for all clients together |
 | Pi-hole DNS | **12000** queries/minute (`FTLCONF_dns_rateLimit_count`) |
 
