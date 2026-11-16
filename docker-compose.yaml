@@ -54,7 +54,7 @@ services:
 
   pihole:
     <<: *service-defaults
-    image: pihole/pihole:2026.10.1
+    image: pihole/pihole:2026.11.0
     container_name: pihole
     hostname: "Pi-hole-Docker"
     depends_on:
