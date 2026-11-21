@@ -1,4 +1,4 @@
-FROM nginx:1.31.8-alpine-slim
+FROM nginx:1.31.9-alpine-slim
 
 RUN apk upgrade --no-cache \
     && apk add --no-cache openssl \

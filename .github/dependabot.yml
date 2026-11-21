@@ -8,7 +8,8 @@ updates:
       - /unbound-docker
       - /wireguard-docker
     schedule:
-      interval: daily
+      interval: cron
+      cronjob: "00 */12 * * *"
     commit-message:
       prefix: deps
     groups:
@@ -18,7 +19,8 @@ updates:
   - package-ecosystem: docker-compose
     directory: /
     schedule:
-      interval: daily
+      interval: cron
+      cronjob: "00 */12 * * *"
     commit-message:
       prefix: deps
     ignore:
