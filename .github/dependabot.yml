@@ -9,7 +9,7 @@ updates:
       - /wireguard-docker
     schedule:
       interval: cron
-      cronjob: "00 */12 * * *"
+      cronjob: "00 00 * * *"
     commit-message:
       prefix: deps
     groups:
@@ -20,7 +20,7 @@ updates:
     directory: /
     schedule:
       interval: cron
-      cronjob: "00 */12 * * *"
+      cronjob: "00 00 * * *"
     commit-message:
       prefix: deps
     ignore:

@@ -3,7 +3,6 @@ set -e
 
 readonly WG_CONFIG_DIR="/etc/wireguard"
 readonly WG_FIREWALL_ENV="${WG_CONFIG_DIR}/wg-firewall.env"
-readonly CREATE_CLIENT_IMG="/usr/local/bin/create-client.sh"
 readonly CREATE_CLIENT_VOL="${WG_CONFIG_DIR}/create-client.sh"
 readonly WG_TEMPLATE_IMG="/usr/local/share/wireguard/wg0.conf.template"
 readonly WG_TEMPLATE_VOL="${WG_CONFIG_DIR}/wg0.conf.template"
@@ -40,10 +39,9 @@ if ! has_wg_conf; then
     chmod 600 "${WG_CONFIG_DIR}/wg0.conf"
 fi
 
-if ! cmp -s "$CREATE_CLIENT_IMG" "$CREATE_CLIENT_VOL"; then
-    echo "[wg] Installing create-client.sh on volume..."
-    cp "$CREATE_CLIENT_IMG" "$CREATE_CLIENT_VOL"
-    chmod 755 "$CREATE_CLIENT_VOL"
+if [ -e "$CREATE_CLIENT_VOL" ]; then
+    echo "[wg] Removing ${CREATE_CLIENT_VOL}; add clients with: sudo docker exec -it wireguard create-client.sh"
+    rm -f "$CREATE_CLIENT_VOL"
 fi
 
 WG_EGRESS_IFACE=$(ip route show default | awk '{print $5; exit}')
@@ -67,7 +65,7 @@ for config_path in "$WG_CONFIG_DIR"/wg*.conf; do
     if grep -q "PRIVATE_KEY_PLACEHOLDER" "$config_path" 2>/dev/null; then
         echo "[wg] Generating WireGuard key for ${config_path}..."
         generated_private_key=$(wg genkey)
-        sed -i "s|PRIVATE_KEY_PLACEHOLDER|${generated_private_key}|g" "$config_path"
+        printf 's|PRIVATE_KEY_PLACEHOLDER|%s|g\n' "$generated_private_key" | sed -i -f - "$config_path"
         chmod 600 "$config_path"
         echo "[wg] Public key ($(basename "$config_path" .conf)): $(printf '%s' "$generated_private_key" | wg pubkey)"
     fi

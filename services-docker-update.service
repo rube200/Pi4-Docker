@@ -1,0 +1,10 @@
+[Unit]
+Description=Pi4-Docker automatic update
+Requisite=services-docker.service
+After=services-docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/Pi4-Docker
+ExecStart=/bin/sh -c 'if sh host-scripts/update.sh; then sh host-scripts/apk-upgrade.sh; else sh host-scripts/apk-upgrade.sh; exit 1; fi'
+TimeoutStartSec=1800

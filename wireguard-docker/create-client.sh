@@ -4,15 +4,6 @@ set -e
 readonly DEFAULT_WG_PORT=51820
 readonly WG_CONFIG_DIR="/etc/wireguard"
 readonly WG_FIREWALL_ENV="${WG_CONFIG_DIR}/wg-firewall.env"
-readonly WIREGUARD_CONTAINER="wireguard"
-
-wg_run() {
-    if [ "$wg_mode" = "local" ]; then
-        wg "$@"
-    else
-        docker exec -i "$WIREGUARD_CONTAINER" wg "$@"
-    fi
-}
 
 peer_block() {
     cat <<EOF
@@ -113,19 +104,16 @@ if [ ! -r "$server_config" ]; then
     exit 1
 fi
 
-if command -v docker >/dev/null 2>&1 && [ "$(docker inspect -f '{{.State.Running}}' "$WIREGUARD_CONTAINER" 2>/dev/null)" = "true" ]; then
-    wg_mode=container
-elif wg show "$wireguard_interface" >/dev/null 2>&1; then
-    wg_mode=local
-else
-    echo "Error: [wg-client] ${wireguard_interface} is not up here and container ${WIREGUARD_CONTAINER} is not running" >&2
+if ! wg show "$wireguard_interface" >/dev/null 2>&1; then
+    echo "Error: [wg-client] ${wireguard_interface} is not up" >&2
+    echo "  Run this inside the container: sudo docker exec -it wireguard create-client.sh" >&2
     exit 1
 fi
 
 server_listen_port=$(sed -n 's/^[[:space:]]*ListenPort[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$server_config" | head -n1)
 server_port="${server_listen_port:-$DEFAULT_WG_PORT}"
 
-server_public_key=$(sed -n 's/^[[:space:]]*PrivateKey[[:space:]]*=[[:space:]]*//p' "$server_config" | head -n1 | wg_run pubkey) || true
+server_public_key=$(sed -n 's/^[[:space:]]*PrivateKey[[:space:]]*=[[:space:]]*//p' "$server_config" | head -n1 | wg pubkey) || true
 if [ -z "$server_public_key" ]; then
     echo "Error: [wg-client] failed to extract the server public key from ${server_config}" >&2
     exit 1
@@ -218,9 +206,9 @@ client_dns="${server_address}, ${server_address6}"
 echo
 echo "Using client IP: ${client_ip}, ${client_ip6} (${access_label})"
 
-private_key=$(wg_run genkey)
-public_key=$(printf '%s' "$private_key" | wg_run pubkey)
-preshared_key=$(wg_run genpsk)
+private_key=$(wg genkey)
+public_key=$(printf '%s' "$private_key" | wg pubkey)
+preshared_key=$(wg genpsk)
 
 cat >"$client_config" <<EOF
 [Interface]
@@ -245,7 +233,7 @@ echo
 echo "Client config created: ${client_config}"
 echo
 echo "Reloading WireGuard configuration..."
-if peer_block | wg_run addconf "$wireguard_interface" /dev/stdin; then
+if peer_block | wg addconf "$wireguard_interface" /dev/stdin; then
     echo "Configuration reloaded successfully"
 else
     echo "Warning: [wg-client] the running interface was not updated; the peer applies on the next container start" >&2

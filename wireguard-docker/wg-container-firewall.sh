@@ -219,6 +219,7 @@ case "$ACTION" in
         done
         $IPT -A "$filter_chain" -d 127.0.0.0/8 -j DROP
         $IPT -A "$filter_chain" -d 10.0.0.0/8 -j DROP
+        $IPT -A "$filter_chain" -d 100.64.0.0/10 -j DROP
         $IPT -A "$filter_chain" -d 169.254.0.0/16 -j DROP
         $IPT -A "$filter_chain" -d 172.16.0.0/12 -j DROP
         $IPT -A "$filter_chain" -d 192.168.0.0/16 -j DROP
@@ -226,8 +227,10 @@ case "$ACTION" in
 
         $IPT -C FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain" 2>/dev/null \
             || $IPT -A FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain"
-        $IPT -C FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null \
-            || $IPT -A FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT
+        $IPT -C FORWARD -o "$WIREGUARD_INTERFACE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
+            || $IPT -A FORWARD -o "$WIREGUARD_INTERFACE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        $IPT -C FORWARD -o "$WIREGUARD_INTERFACE" -j DROP 2>/dev/null \
+            || $IPT -A FORWARD -o "$WIREGUARD_INTERFACE" -j DROP
 
         $IPT -t mangle -C FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
             || $IPT -t mangle -A FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
@@ -260,8 +263,10 @@ case "$ACTION" in
 
         $IP6T -C FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain6" 2>/dev/null \
             || $IP6T -A FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain6"
-        $IP6T -C FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null \
-            || $IP6T -A FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT
+        $IP6T -C FORWARD -o "$WIREGUARD_INTERFACE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
+            || $IP6T -A FORWARD -o "$WIREGUARD_INTERFACE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        $IP6T -C FORWARD -o "$WIREGUARD_INTERFACE" -j DROP 2>/dev/null \
+            || $IP6T -A FORWARD -o "$WIREGUARD_INTERFACE" -j DROP
 
         $IP6T -t mangle -C FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
             || $IP6T -t mangle -A FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
@@ -331,13 +336,15 @@ case "$ACTION" in
         done
 
         $IPT -t mangle -D FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
-        $IPT -D FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null
+        $IPT -D FORWARD -o "$WIREGUARD_INTERFACE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
+        $IPT -D FORWARD -o "$WIREGUARD_INTERFACE" -j DROP 2>/dev/null
         $IPT -D FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain" 2>/dev/null
         $IPT -F "$filter_chain" 2>/dev/null
         $IPT -X "$filter_chain" 2>/dev/null
 
         $IP6T -t mangle -D FORWARD -o "$WIREGUARD_INTERFACE" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
-        $IP6T -D FORWARD -o "$WIREGUARD_INTERFACE" -j ACCEPT 2>/dev/null
+        $IP6T -D FORWARD -o "$WIREGUARD_INTERFACE" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null
+        $IP6T -D FORWARD -o "$WIREGUARD_INTERFACE" -j DROP 2>/dev/null
         $IP6T -D FORWARD -i "$WIREGUARD_INTERFACE" -j "$filter_chain6" 2>/dev/null
         $IP6T -F "$filter_chain6" 2>/dev/null
         $IP6T -X "$filter_chain6" 2>/dev/null

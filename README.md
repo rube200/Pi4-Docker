@@ -9,7 +9,7 @@ Docker Compose stack for a home server on a Raspberry Pi 4:
 - **nginx**: reverse proxy, TLS, and the DoH and DNS-over-TLS front ends.
 - **WireGuard**: VPN for remote devices.
 
-Every service runs on both IPv4 and IPv6. A **systemd** unit and **host scripts** apply the firewall, update DNS records, renew certificates, and refresh Pi-hole’s TLS certificate. **Hostinger is entirely optional:** omit `DNS_API` and skip [Hostinger DNS](#hostinger-dns-optional) if you use another DNS provider or static records.
+Every service runs on both IPv4 and IPv6. **systemd** units and **host scripts** apply the firewall, update DNS records, renew certificates, refresh Pi-hole’s TLS certificate, and optionally deploy new commits and Alpine package upgrades. **Hostinger is entirely optional:** omit `DNS_API` and skip [Hostinger DNS](#hostinger-dns-optional) if you use another DNS provider or static records.
 
 **License:** GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
@@ -59,8 +59,9 @@ Compose starts Unbound first, then Pi-hole, and the rest once Pi-hole is healthy
 | [docker-compose.yaml](docker-compose.yaml) | Service graph, the dual-stack bridge network, healthchecks and image tags. |
 | [.env.example](.env.example) | Every setting you can change; copy it to `.env` (never commit `.env`). |
 | [unbound-docker/](unbound-docker/), [doh-docker/](doh-docker/), [dhcp-relay-docker/](dhcp-relay-docker/), [nginx-docker/](nginx-docker/), [wireguard-docker/](wireguard-docker/) | The locally built images (Pi-hole uses the published image). |
-| [host-scripts/](host-scripts/) | Firewall, certificate renewal, Pi-hole TLS renewal, and the optional Hostinger DNS helpers. |
-| [services-docker.service](services-docker.service) | systemd unit that runs the host scripts and starts the stack at boot. |
+| [host-scripts/](host-scripts/) | Firewall, certificate renewal, Pi-hole TLS renewal, updates, Alpine package upgrades, and the optional Hostinger DNS helpers. |
+| [services-docker.service](services-docker.service) | systemd unit that runs the host scripts, starts the stack at boot, and starts the update service. |
+| [services-docker-update.service](services-docker-update.service), [services-docker-update.timer](services-docker-update.timer) | Optional systemd unit and timer that run [update.sh](host-scripts/update.sh) hourly, and [apk-upgrade.sh](host-scripts/apk-upgrade.sh), which checks at most every 6 hours (see [Updating](#updating)). |
 | [docs/](docs/) | The overview diagram (SVG, follows the light or dark theme). |
 
 ## Requirements
@@ -70,8 +71,8 @@ Compose starts Unbound first, then Pi-hole, and the rest once Pi-hole is healthy
 - **IPv4 and IPv6 on the LAN.** IPv6 is not optional: the Pi needs a global IPv6 address on `HOST_LAN_IFACE`, and `HOST_LAN_IP6` must be set. Docker turns on IPv6 forwarding, and a forwarding host ignores Router Advertisements unless `net.ipv6.conf.<iface>.accept_ra=2` is set (persist it under `/etc/sysctl.d/`).
 - **Socket buffer for Unbound:** `net.core.rmem_max=1048576` on the host (persist it under `/etc/sysctl.d/`). The container cannot raise the limit itself, so without it Unbound does not get the 1 MB receive buffer (`so-rcvbuf`) its config asks for.
 - **Capabilities** as defined in `docker-compose.yaml`: `NET_ADMIN` for Pi-hole, WireGuard and the DHCP relays, `SYS_NICE` for Pi-hole. Unbound, doh, WireGuard and nginx drop `NET_RAW`, so they cannot forge traffic on the Docker network, and doh-proxy runs as `nobody`. Every container except Pi-hole runs with `no-new-privileges`. No container runs privileged or can load kernel modules.
-- **Persistent host paths** (bind mounts): `/etc/pihole`, `/etc/letsencrypt/live`, `/etc/letsencrypt/archive` and `/var/www/certbot` (read-only for nginx, which never sees the ACME account key), `/etc/wireguard`.
-- **Host tools** for the scripts in [host-scripts/](host-scripts/): `nft`, for TLS `certbot` and `openssl`, and, only with `DNS_API` (Hostinger), `curl` and `dig` (bind9-dnsutils). Without `dig` the Hostinger scripts fall back to the system resolver, which may not be up yet at boot.
+- **Persistent host paths** (bind mounts): `/etc/pihole`, `/etc/wireguard`, and, read-only for nginx (which never sees the ACME account key), `/etc/letsencrypt/live`, `/etc/letsencrypt/archive` and `/var/www/certbot`.
+- **Host tools** for the scripts in [host-scripts/](host-scripts/): `nft` and `git` (updates and package checks); `certbot` and `openssl` for TLS; and, only with `DNS_API` (Hostinger), `curl` and `dig` (bind9-dnsutils). Without `dig` the Hostinger scripts fall back to the system resolver, which may not be up yet at boot.
 
 Both sysctls in one file (replace `eth0` with your `HOST_LAN_IFACE`), then apply it:
 
@@ -85,7 +86,7 @@ sudo sysctl --system
 
 ## Quick start
 
-1. Clone the repository to `/opt/Pi4-Docker` (the path the systemd unit and the examples below use) as root, and enter it. The systemd unit and Certbot run its scripts as root, so a checkout your normal user can write would let anything running as that user become root. Use `sudo` for every command below that touches the checkout.
+1. Clone the repository to `/opt/Pi4-Docker` (the path the systemd units and the Certbot hooks use) as root, and enter it; the commands below run from there. The systemd units and Certbot run the repository’s scripts as root, so a checkout your normal user can write would let anything running as that user become root. Use `sudo` for every command below that touches the checkout.
 
    ```bash
    sudo git clone https://github.com/rube200/Pi4-Docker /opt/Pi4-Docker
@@ -139,19 +140,35 @@ sudo sysctl --system
 
 8. Add WireGuard clients (see [WireGuard](#wireguard)).
 
-9. Optional: install the [systemd service](#systemd-service) so all of the above runs at boot.
+9. Optional: link the [systemd service](#systemd-service) to the checkout, enable it so all of the above runs at boot, and start it:
+
+   ```bash
+   sudo systemctl enable --now "$PWD/services-docker.service"
+   ```
+
+10. Optional, needs step 9: link the [update service](#updating), so updates run whenever the stack starts:
+
+    ```bash
+    sudo systemctl link "$PWD/services-docker-update.service"
+    ```
+
+    For hourly updates as well, enable and start its timer:
+
+    ```bash
+    sudo systemctl enable --now "$PWD/services-docker-update.timer"
+    ```
 
 ## Configuration
 
 Settings you are expected to change live in `.env` (see [.env.example](.env.example)); the rest is fixed in the files below.
 
 - **Unbound:** [unbound-docker/pi-hole.conf](unbound-docker/pi-hole.conf) is the resolver config, based on the Pi-hole guide, on port **5335**; only the Docker network may query it. Instead of recursing from the root servers in plaintext, it forwards every query to Quad9 (`dns.quad9.net`, with malware blocking) over DNS-over-TLS. There is no fallback to recursion: if Quad9 is unreachable, DNS fails rather than leaking queries in plaintext. Quad9 validates DNSSEC and Unbound checks every answer again, so a bogus answer is refused even if it comes from Quad9. Quad9 cannot sign the NXDOMAIN it synthesizes for a blocked name, so Quad9's blocks reach clients as SERVFAIL rather than NXDOMAIN. Unbound reports unhealthy while none of Quad9's addresses answers over DNS-over-TLS with a valid certificate; the healthcheck asks Quad9 directly, because an answer from Unbound's cache would hide an outage.
-- **Pi-hole:** configured through the `FTLCONF_*` variables in the compose file (DNSSEC off because Unbound already validates, Unbound as the only upstream, the relayed DHCP subnets, the web domain and port). Pi-hole shows these settings as read-only in its web interface; change them in the compose file. Everything else, the DHCP server included, is set in the web interface and kept in `/etc/pihole`. Web interface logins last 30 days (`FTLCONF_webserver_session_timeout`).
+- **Pi-hole:** configured through the `FTLCONF_*` variables in the compose file (DNSSEC off because Unbound already validates, Unbound as the only upstream, the local domain `home.arpa`, the relayed DHCP subnets, the web domain and port). Pi-hole shows these settings as read-only in its web interface; change them in the compose file. Everything else, the DHCP server included, is set in the web interface and kept in `/etc/pihole`. Web interface logins last 30 days (`FTLCONF_webserver_session_timeout`).
 - **DHCP relays:** [dhcp-relay-docker/](dhcp-relay-docker/) runs dnsmasq as a relay only. Each relay waits for a global address on `HOST_LAN_IFACE`, and reports unhealthy while it waits or when the address it relays from is not `HOST_LAN_IP` (IPv4) or inside the `/64` of `HOST_LAN_IP6`, because Pi-hole drops those requests.
 - **DoH:** [doh-docker/](doh-docker/) runs two doh-proxy processes, one per address family, each forwarding to Pi-hole over the same family. Each process has its own ODoH key, so nginx sends every Oblivious DoH request to the IPv4 one. The image downloads a pinned `doh-proxy` release (`DOH_PROXY_VERSION` in `doh-docker/Dockerfile`, checked against the `DOH_PROXY_SHA256_*` next to it; update all three together) for **x86_64** or **aarch64** only; 32-bit ARM is not supported (see `doh-docker/install-doh-proxy.sh`).
 - **WireGuard:** [wireguard-docker/](wireguard-docker/) holds the server config template, the client script and the container firewall; see [WireGuard](#wireguard).
 - **nginx:** [nginx-docker/](nginx-docker/) holds the templates under `conf/templates/` (processed at container start), shared includes under `conf/common.d/`, the DoT stream proxy under `conf/stream.d/`, and the static site under `html/`. Every HTTPS response carries HSTS with `includeSubDomains; preload`, so once a browser has visited, it refuses plain HTTP for a year on **every** subdomain of `HOST_SERVER_HOSTNAME`, including ones this stack does not serve. Optional subdomain reverse-proxy samples live under `nginx-docker/examples/` (copy into `nginx-docker/conf/templates/` as `*.conf.template` and rebuild; they are not loaded until you do).
-- **Host automation:** [host-scripts/](host-scripts/) holds the firewall, certificate renewal, Pi-hole TLS renewal, and the optional [Hostinger DNS](#hostinger-dns-optional) helpers (`DNS_API`).
+- **Host automation:** [host-scripts/](host-scripts/) holds the firewall, certificate renewal, Pi-hole TLS renewal, the [updates](#updating) and [Alpine package upgrades](#image-versions), and the optional [Hostinger DNS](#hostinger-dns-optional) helpers (`DNS_API`).
 
 ### Landing page
 
@@ -175,7 +192,7 @@ The backends are **not published** at all and are only reachable on the Docker n
 
 nginx answers on **80**, **443** and **8443** for any name, but redirects every name it does not serve (a bare IP address or an unknown subdomain, for example) to `https://<hostname>`.
 
-**Conflicts:** If something else on the host already binds **53** (systemd-resolved, another DNS, etc.), Pi-hole’s publish will fail until that is moved or disabled. The same goes for a DHCP server or relay already running on the host (**67** / **547**).
+**Conflicts:** If something else on the host already binds **53** (systemd-resolved, another DNS, etc.), Pi-hole cannot publish its port until that is moved or disabled. The same goes for a DHCP server or relay already running on the host (**67** / **547**).
 
 ### Exposure patterns
 
@@ -231,7 +248,7 @@ nginx and Pi-hole add their own per-client limits on top of the firewall. They a
 | nginx, Pi-hole web interface | **30** requests/second, burst **60**; login (`POST /api/auth`) **10**/minute, burst **5**, and **30**/minute, burst **10**, for all clients together |
 | Pi-hole DNS | **12000** queries/minute (`FTLCONF_dns_rateLimit_count`) |
 
-WireGuard clients reach nginx and Pi-hole as `172.28.0.5` / `fd28::5`, and DoT clients reach Pi-hole as nginx, so each of those groups shares one budget. DoH clients count on their own: `doh` passes each client’s address to Pi-hole, which also shows it in the query log.
+WireGuard clients reach nginx and Pi-hole as `172.28.0.5` / `fd28::5`, DoT clients reach Pi-hole as nginx, and DoH clients as `doh`, so each of those groups shares one budget. Pi-hole ignores the EDNS client subnet a query carries (`FTLCONF_dns_EDNS0ECS`), so no client can pose as another.
 
 ## WireGuard
 
@@ -239,13 +256,13 @@ On first start the container creates `/etc/wireguard/wg0.conf` from [wireguard-d
 
 ### Adding a client
 
-Run on the host:
+Run it inside the container, so the host needs no WireGuard tools:
 
 ```bash
-sudo sh /etc/wireguard/create-client.sh
+sudo docker exec -it wireguard create-client.sh
 ```
 
-The container installs the script there and writes the settings it reads (`wg-firewall.env`) at every start, and the script runs `wg` inside the container, so the host needs no WireGuard tools. It asks which server to use when there is more than one `wg*.conf`, then for a name (letters, digits, `_` and `-`; names starting with `wg` are reserved for server configs) and an access type. It writes the device config to `/etc/wireguard/<name>.conf` and adds the peer to the running server. Every client sends all its traffic through the tunnel and uses Pi-hole for DNS.
+It asks which server to use when there is more than one `wg*.conf`, then for a name (letters, digits, `_` and `-`; names starting with `wg` are reserved for server configs) and an access type. It writes the device config to `/etc/wireguard/<name>.conf` and adds the peer to the running server. Every client sends all its traffic through the tunnel and uses Pi-hole for DNS.
 
 ### Removing a client
 
@@ -256,13 +273,14 @@ Delete its `# <name> (…)` comment and `[Peer]` block from `/etc/wireguard/wg0.
 | Access | Addresses | Can reach |
 |--------|-----------|-----------|
 | **Full access** | `10.13.13.2`–`.15`, `fd13:13:13::2`–`::f` (14 clients) | Everything: the internet, the Pi and the LAN, SSH included. |
-| **Internet only** | `10.13.13.16`–`.254`, `fd13:13:13::10`–`::fe` | The internet, Pi-hole DNS and nginx (websites, DoH, DoT). Not the LAN, no other service on the Pi, and no other WireGuard client. |
+| **Internet only** | `10.13.13.16`–`.254`, `fd13:13:13::10`–`::fe` | The internet, Pi-hole DNS and nginx (websites, DoH, DoT). Not the LAN or any other private or CGNAT (`100.64.0.0/10`) address, no other service on the Pi, and no other WireGuard client. |
 
 - The script refuses a new full access client when all 14 addresses are taken. A new internet only client gets the first free address above the highest one in use.
 - Opening your hostname takes internet only clients to nginx and full access clients to the Pi itself. The container looks up the hostname’s public addresses when it starts, so restart it (`sudo docker compose restart wireguard`) after they change. If the IPv6 lookup fails, internet only clients get no IPv6 internet until that restart, because the LAN prefix to block is unknown.
 - The full access pool is `WG_FULL_ACCESS_MASK` in [docker-compose.yaml](docker-compose.yaml): `28` is 16 addresses, minus the network address and the server.
 - `WG_ALLOWLIST` in `.env` lists the addresses internet only clients may reach besides the internet and DNS; the default is nginx.
-- The `wireguard` container enforces all of this: its traffic is masqueraded, so the host sees every client as `172.28.0.5` / `fd28::5`.
+- On IPv6, “the LAN” is the `/64` of `HOST_LAN_IP6` and of the hostname’s AAAA; other `/64`s of your prefix stay reachable.
+- The `wireguard` container enforces all of this. Its traffic is masqueraded, so the host sees every client as `172.28.0.5` / `fd28::5`, and only replies to the clients’ own connections enter the tunnel.
 
 ## Certificates
 
@@ -275,7 +293,7 @@ nginx serves the Let’s Encrypt certificate for `HOST_SERVER_HOSTNAME`, copied 
 1. Link the script as a Certbot deploy hook, so Certbot runs it after every renewal between boots (a **symlink**, so it still finds `.env`). Certbot only runs hooks that are executable; git keeps the bit, so `chmod +x` the host scripts only if your checkout lost it.
 
    ```bash
-   sudo ln -s /opt/Pi4-Docker/host-scripts/certbot-renew.sh /etc/letsencrypt/renewal-hooks/deploy/pi4-docker.sh
+   sudo ln -s "$PWD/host-scripts/certbot-renew.sh" /etc/letsencrypt/renewal-hooks/deploy/pi4-docker.sh
    ```
 
 2. Issue the certificate:
@@ -286,7 +304,7 @@ nginx serves the Let’s Encrypt certificate for `HOST_SERVER_HOSTNAME`, copied 
 3. Certbot 3.2.0 and later run the hook for the first certificate too, so nginx switches to it right away. Older Certbot (Raspberry Pi OS bookworm ships 2.1) does not; run the script once yourself:
 
    ```bash
-   sudo sh /opt/Pi4-Docker/host-scripts/certbot-renew.sh
+   sudo sh host-scripts/certbot-renew.sh
    ```
 
 ### Pi-hole’s internal certificate
@@ -331,7 +349,7 @@ Script: [host-scripts/ddns-hostinger.sh](host-scripts/ddns-hostinger.sh). It poi
 [services-docker.service](services-docker.service) runs this script as **`ExecStartPre`** before `docker compose up -d`, so each boot refreshes DNS before services start; a failure there does not stop the stack. Nothing runs it between boots: after your public IPv4 or IPv6 changes, run it again and restart `wireguard` (see [WireGuard](#wireguard)).
 
 ```bash
-sudo sh /opt/Pi4-Docker/host-scripts/ddns-hostinger.sh
+sudo sh host-scripts/ddns-hostinger.sh
 ```
 
 ### DNS-01 through Hostinger
@@ -366,20 +384,54 @@ Certbot stores the hooks in the certificate’s renewal configuration (under `/e
 3. [certbot-renew.sh](host-scripts/certbot-renew.sh): renews the certificate and deploys it into nginx.
 4. [pihole-tls-renew.sh](host-scripts/pihole-tls-renew.sh): deletes Pi-hole’s TLS certificate when it is within 7 days of expiry, so Pi-hole creates a new one. Pi-hole only does that when it starts, so the script restarts it if it is already running (after a power cut, for example, Docker restarts it before the unit runs).
 
-It assumes the project lives at **`/opt/Pi4-Docker`** and loads **`/opt/Pi4-Docker/.env`**. To use it elsewhere, either:
+Once the stack is up, it starts [services-docker-update.service](services-docker-update.service), if that is linked (see [Updating](#updating)).
 
-- Copy or symlink the repo to that path, **or**
-- Edit `WorkingDirectory=`, `EnvironmentFile=`, and every `ExecStartPre=` / `ExecStart=` path in the unit file to match your install.
-
-Then install and enable the unit:
+Install `services-docker.service` as a link to the checkout, which must be on the root filesystem. `--now` also marks a stack you started by hand as active, which the update service needs:
 
 ```bash
-sudo cp /opt/Pi4-Docker/services-docker.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable services-docker.service
+sudo systemctl enable --now "$PWD/services-docker.service"
 ```
 
-If a step fails (for example the network is not up yet), systemd retries every 30 seconds. Stopping the unit runs `docker compose down`.
+The units use **`WorkingDirectory=/opt/Pi4-Docker`**. For another path, symlink the repo there, or override it in a drop-in on both units (editing them in the checkout stops updates):
+
+```bash
+sudo systemctl edit services-docker.service
+```
+
+```ini
+[Service]
+WorkingDirectory=/srv/Pi4-Docker
+```
+
+If a start step fails, systemd retries every 30 seconds. Stopping the unit runs `docker compose down`.
+
+### Switching from copied units
+
+Copies in `/etc/systemd/system/` don't get updates. Remove them (leave the timer out of `disable` if it is not installed):
+
+```bash
+sudo systemctl disable services-docker.service services-docker-update.timer
+```
+
+```bash
+sudo rm -f /etc/systemd/system/services-docker.service /etc/systemd/system/services-docker-update.service /etc/systemd/system/services-docker-update.timer
+```
+
+Then link, enable and start the stack unit:
+
+```bash
+sudo systemctl enable --now "$PWD/services-docker.service"
+```
+
+For the updates, link the update service, then enable and start the timer:
+
+```bash
+sudo systemctl link "$PWD/services-docker-update.service"
+```
+
+```bash
+sudo systemctl enable --now "$PWD/services-docker-update.timer"
+```
 
 ## Maintenance
 
@@ -395,25 +447,71 @@ journalctl -t pihole -f
 journalctl -k -g FIREWALL
 ```
 
+Host scripts log under their unit:
+
+```bash
+journalctl -u services-docker -u services-docker-update
+```
+
 ### Updating
 
-The systemd unit only builds images that are missing, so after pulling changes rebuild the local images yourself, and re-apply the firewall if `host-scripts/nftables.conf` changed:
+[services-docker-update.service](services-docker-update.service) runs [update.sh](host-scripts/update.sh), then [apk-upgrade.sh](host-scripts/apk-upgrade.sh), after every stack start and hourly with [services-docker-update.timer](services-docker-update.timer). It deploys whatever is on `master`, as root. Both scripts refuse a checkout that users other than root can change, and skip with a `Note:` when it is off `master` or has local changes (edited, staged or untracked files; ignored ones such as `.env` don't count). The unit fails if either script fails, and never starts a stopped stack.
+
+Link the service; `services-docker.service` starts it, so there is nothing to enable:
 
 ```bash
-sudo git pull
+sudo systemctl link "$PWD/services-docker-update.service"
+```
+
+Optional: for hourly updates, enable and start the timer:
+
+```bash
+sudo systemctl enable --now "$PWD/services-docker-update.timer"
+```
+
+Run it now with `sudo systemctl start services-docker-update` (it never overlaps a timed run). Without the unit, run `sudo sh host-scripts/update.sh`, then `sudo sh host-scripts/apk-upgrade.sh`. To turn it off (`disable` also removes the links):
+
+```bash
+sudo systemctl disable --now services-docker-update.timer
 ```
 
 ```bash
-sudo docker compose up -d --build
+sudo systemctl disable services-docker-update.service
 ```
 
-```bash
-sudo sh host-scripts/firewall-rules.sh
-```
+`update.sh`:
+
+1. Fetches; stops if upstream is already the commit recorded in `.git/pi4-docker-deployed`.
+2. Fast-forwards; fails on local commits. Git hooks are disabled for the fetch and the merge.
+3. Re-applies the firewall if `firewall-rules.sh` or `nftables.conf` changed.
+4. Runs `docker compose up -d --build --remove-orphans`. With the build cache, it rebuilds only images whose files or base tag changed, and recreates only containers whose image or settings changed.
+5. Runs `systemctl daemon-reload` if a `services-docker*` unit changed; a changed service applies from its next start.
+6. Records the commit only after all of that, so a failed run or a manual `git pull` is deployed by the next run.
+7. Removes the images the stack stopped using, old Pi-hole tags included; other images and the build cache stay.
+
+`apk-upgrade.sh`:
+
+1. Stops if it checked in the last 6 hours (`/run/pi4-docker/apk-checked`, cleared when the stack stops, so every start checks).
+2. Runs `apk upgrade --simulate` in each local image, about 14 MB of package indexes per check; a failed check is not recorded.
+3. Rebuilds the outdated images with `--no-cache`.
+4. Recreates their containers with `docker compose up -d --remove-orphans`.
+5. Removes the images it replaced.
+
+Don't restart `services-docker.service` to update: stopping it runs `docker compose down`.
 
 ### Image versions
 
-Published images and base images are **pinned to specific tags** in `docker-compose.yaml` and Dockerfiles; Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) proposes daily updates. Upgrade deliberately (check upstream release notes), then update tags and test. The Alpine packages inside the local images are whatever the repositories carry at build time (each Dockerfile runs `apk upgrade`), and Unbound comes from Alpine **edge** until the base image is Alpine 3.25 (see [unbound-docker/Dockerfile](unbound-docker/Dockerfile)). To pick up new packages without a tag change, rebuild without the cache:
+Published images and base images are **pinned to specific tags** in `docker-compose.yaml` and Dockerfiles; Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) proposes daily tag updates; it never touches the Alpine packages inside the images. Upgrade deliberately (check upstream release notes), then update tags and test. The Alpine packages inside the local images are whatever the repositories carry at build time (each Dockerfile runs `apk upgrade`), and Unbound comes from Alpine **edge** until the base image is Alpine 3.25 (see [unbound-docker/Dockerfile](unbound-docker/Dockerfile)). The build cache keeps those packages as they were at the first build, so [apk-upgrade.sh](host-scripts/apk-upgrade.sh) refreshes them (see [Updating](#updating)). To force a check:
+
+```bash
+sudo rm -f /run/pi4-docker/apk-checked
+```
+
+```bash
+sudo systemctl start services-docker-update
+```
+
+Or rebuild every local image without the cache:
 
 ```bash
 sudo docker compose build --no-cache
@@ -423,7 +521,7 @@ sudo docker compose build --no-cache
 sudo docker compose up -d
 ```
 
-To confirm what is newest on Docker Hub, use each image’s tags API (for example `https://hub.docker.com/v2/repositories/pihole/pihole/tags?ordering=last_updated`) or the Hub UI. **Pi-hole:** the highest `YYYY.MM.N` tag on Hub is normally the same image as `latest`; compare digests to be sure. **nginx:** the highest `X.Y.Z-alpine-slim` tag can trail `mainline-alpine-slim`; when they match digest, the semver tag is still “current mainline.”
+To confirm what is newest on Docker Hub, use each image’s tags API (for example `https://hub.docker.com/v2/repositories/pihole/pihole/tags?ordering=last_updated`) or the Hub UI. **Pi-hole:** the highest `YYYY.MM.N` tag on Hub is normally the same image as `latest`; compare digests to be sure. **nginx:** the highest `X.Y.Z-alpine-slim` tag can trail `mainline-alpine-slim`; when their digests match, the semver tag is the current mainline.
 
 ## Troubleshooting
 
@@ -431,18 +529,19 @@ To confirm what is newest on Docker Hub, use each image’s tags API (for exampl
 
 - **IPv6 works on the host but not in containers:** Docker’s IPv6 NAT is off (`"ip6tables": true`, see [Requirements](#requirements)).
 - **Pi-hole does not start, port 53 in use:** something else on the host binds **53** (see [Network and ports](#network-and-ports)).
-- **Unbound unhealthy, “Quad9 unreachable over DNS-over-TLS”:** the Pi has no internet, or something blocks TCP **853** to Quad9. Names Unbound has not cached fail until it is back, since there is no fallback.
+- **Unbound unhealthy, “Quad9 unreachable over DNS-over-TLS”:** the Pi has no internet, or something blocks TCP **853** to Quad9. Names Unbound has not cached fail to resolve until Quad9 is reachable again, since there is no fallback.
 - **`dhcpv6-relay` unhealthy, waiting for an address:** the Pi has no global IPv6 on `HOST_LAN_IFACE` (`ip -6 addr show scope global`). Check `accept_ra=2` (see [Requirements](#requirements)).
 - **A relay unhealthy, “Pi-hole drops every request”:** it relays from an address that is not `HOST_LAN_IP`, or not inside the `/64` of `HOST_LAN_IP6`. Fix those in `.env`, or set `DHCP_LOCAL_IP` / `DHCP_LOCAL_IP6`.
 - **nginx unhealthy:** it serves the self-signed placeholder or a certificate within 7 days of expiry (see [Certificates](#certificates)).
 - **`wireguard` fails with “Unknown device type”:** load the `wireguard` module at boot (see [Requirements](#requirements)).
 - **Internet only WireGuard clients have no IPv6:** the hostname’s AAAA lookup failed when the container started; restart it (see [WireGuard](#wireguard)).
+- **No updates:** check `journalctl -u services-docker-update`. `can be changed by users other than root` names the first such path; run the `chown`/`chmod` the error prints. `failed to read the checkout` is usually git’s “dubious ownership”: the checkout is not owned by root. An empty journal means it has not run: it is not linked, or the stack has not started since it was linked.
 - **HTTP errors from Hostinger:** wrong token, token without DNS access, or **`HOST_SERVER_HOSTNAME` not matching** the zone name in Hostinger.
 - **Certbot TXT “not visible”:** nameservers for the domain must point at Hostinger’s DNS for the API-written records to be what the public internet resolves; propagation can take a few minutes.
 
 ## Security
 
-This stack’s reference posture is the **full public edge** (DNS **53** + DoH **8443** + DoT **853**, plus HTTPS and WireGuard). WAN abuse controls are **per-source** nftables rate limits on **new** flows (see [Firewall and rate limits](#firewall-and-rate-limits)). Review [host-scripts/nftables.conf](host-scripts/nftables.conf) and your **router forwards** (see [Network and ports](#network-and-ports)) so exposure matches. Only full access WireGuard clients can reach the LAN (see [WireGuard](#wireguard)). If you set **`DNS_API`**, treat it like any other **secret** (Hostinger token). WireGuard keys are secrets too. Do not commit `.env`.
+This stack’s reference posture is the **full public edge** (DNS **53** + DoH **8443** + DoT **853**, plus HTTPS and WireGuard). WAN abuse controls are **per-source** nftables rate limits on **new** flows (see [Firewall and rate limits](#firewall-and-rate-limits)). Review [host-scripts/nftables.conf](host-scripts/nftables.conf) and your **router forwards** (see [Network and ports](#network-and-ports)) so exposure matches. Only full access WireGuard clients can reach the LAN (see [WireGuard](#wireguard)). Key-only SSH (`PasswordAuthentication no`) is recommended. The firewall trusts SSH from the WireGuard container’s address, which a compromised container on the Docker network could fake. With the [update service](#updating), anything pushed to `master` runs as root on the Pi. If you set **`DNS_API`**, treat it like any other **secret** (Hostinger token). WireGuard keys are secrets too. Do not commit `.env`.
 
 To **report a vulnerability in this project** (this repo’s compose, scripts, or shipped integration defaults), follow [SECURITY.md](SECURITY.md).
 
