@@ -10,10 +10,7 @@ start_proxy() {
         -l "$1" \
         -p "$DOH_PATH" \
         -j "$DOH_PUBLIC_PORT" \
-        -u "$2" \
-        --enable-ecs \
-        --ecs-prefix-v4 32 \
-        --ecs-prefix-v6 128 &
+        -u "$2" &
 }
 
 if [ -z "$HOST_SERVER_HOSTNAME" ]; then

@@ -1,0 +1,8 @@
+[Unit]
+Description=Check for Pi4-Docker updates every hour
+
+[Timer]
+OnCalendar=hourly
+
+[Install]
+WantedBy=timers.target
